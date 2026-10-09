@@ -1,497 +1,1100 @@
-import React, {useState} from 'react';
+import React, {useMemo, useState} from 'react';
 import {
+  View,
+  Text,
+  StyleSheet,
   Pressable,
   ScrollView,
-  StyleSheet,
-  Text,
   TextInput,
-  View,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
+  LayoutAnimation,
+  UIManager,
+  Animated,
 } from 'react-native';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
+import {useNavigation} from '@react-navigation/native';
+import {
+  ArrowLeft,
+  Star,
+  Bug,
+  Lightbulb,
+  Heart,
+  MessageCircle,
+  Mail,
+  Send,
+  CheckCircle2,
+  Info,
+  Smile,
+  Frown,
+  Meh,
+  Laugh,
+  ThumbsUp,
+} from 'lucide-react-native';
 
 import {useTheme} from '../../hooks/useTheme';
 
-const ratingOptions = [
-  {value: 1, label: 'Poor'},
-  {value: 2, label: 'Okay'},
-  {value: 3, label: 'Good'},
-  {value: 4, label: 'Great'},
-  {value: 5, label: 'Amazing'},
+if (
+  Platform.OS === 'android' &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+/* --------------------------- CONSTANTS --------------------------- */
+
+const CATEGORIES = [
+  {
+    key: 'bug',
+    label: 'Bug',
+    Icon: Bug,
+    color: '#EF4444',
+  },
+  {
+    key: 'feature',
+    label: 'Feature',
+    Icon: Lightbulb,
+    color: '#F59E0B',
+  },
+  {
+    key: 'praise',
+    label: 'Praise',
+    Icon: Heart,
+    color: '#EC4899',
+  },
+  {
+    key: 'other',
+    label: 'Other',
+    Icon: MessageCircle,
+    color: '#6366F1',
+  },
 ];
+
+const RATING_OPTIONS = [
+  {value: 1, label: 'Poor', Icon: Frown, color: '#EF4444'},
+  {value: 2, label: 'Okay', Icon: Meh, color: '#F59E0B'},
+  {value: 3, label: 'Good', Icon: Smile, color: '#EAB308'},
+  {value: 4, label: 'Great', Icon: ThumbsUp, color: '#84CC16'},
+  {value: 5, label: 'Love it', Icon: Laugh, color: '#10B981'},
+];
+
+const MAX_FEEDBACK = 500;
+
+/* --------------------------- SCREEN --------------------------- */
 
 function FeedbackScreen() {
   const {theme} = useTheme();
+  const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(
+    () => createStyles(theme, insets),
+    [theme, insets],
+  );
 
+  const [category, setCategory] = useState('feature');
   const [rating, setRating] = useState(0);
+  const [title, setTitle] = useState('');
   const [feedback, setFeedback] = useState('');
+  const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = () => {
-    if (!rating || !feedback.trim()) {
+  const isFormValid =
+    rating > 0 && feedback.trim().length >= 10 && title.trim().length >= 3;
+
+  const feedbackLen = feedback.length;
+  const counterColor =
+    feedbackLen >= MAX_FEEDBACK
+      ? theme.colors.danger
+      : feedbackLen >= MAX_FEEDBACK * 0.8
+      ? '#F59E0B'
+      : theme.colors.textLight;
+
+  const selectedRating = RATING_OPTIONS.find(r => r.value === rating);
+
+  /* --------------------------- HANDLERS --------------------------- */
+  function handleBack() {
+    navigation.goBack();
+  }
+
+  function handleSubmit() {
+    setError('');
+
+    if (!rating) {
+      setError('Please select a rating');
       return;
     }
+    if (title.trim().length < 3) {
+      setError('Title must be at least 3 characters');
+      return;
+    }
+    if (feedback.trim().length < 10) {
+      setError('Feedback must be at least 10 characters');
+      return;
+    }
+    if (email && !/^\S+@\S+\.\S+$/.test(email.trim())) {
+      setError('Please enter a valid email address');
+      return;
+    }
+    if (submitting) return;
 
-    setSubmitted(true);
-  };
+    setSubmitting(true);
+    setTimeout(() => {
+      setSubmitting(false);
+      setSubmitted(true);
+    }, 700);
+  }
 
+  function handleReset() {
+    setCategory('feature');
+    setRating(0);
+    setTitle('');
+    setFeedback('');
+    setEmail('');
+    setError('');
+    setSubmitted(false);
+  }
+
+  /* --------------------------- SUCCESS SCREEN --------------------------- */
   if (submitted) {
     return (
-      <View
-        style={[
-          styles.successContainer,
-          {
-            backgroundColor: theme.colors.background,
-          },
-        ]}>
-        <View
-          style={[
-            styles.successIcon,
-            {
-              backgroundColor: `${theme.colors.success}15`,
-            },
-          ]}>
-          <Text
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View style={styles.successContainer}>
+          <View
             style={[
-              styles.successIconText,
+              styles.successIconOuter,
+              {backgroundColor: '#10B981' + '14'},
+            ]}>
+            <View
+              style={[
+                styles.successIconInner,
+                {backgroundColor: '#10B981'},
+              ]}>
+              <CheckCircle2
+                size={38}
+                color="#FFFFFF"
+                strokeWidth={2.6}
+              />
+            </View>
+          </View>
+
+          <Text style={styles.successTitle}>Thank you!</Text>
+          <Text style={styles.successText}>
+            Your feedback helps us make TodoMaster better. We read every
+            single message.
+          </Text>
+
+          <View style={styles.successStatsRow}>
+            <View
+              style={[
+                styles.successStatMini,
+                {
+                  backgroundColor: theme.colors.surface,
+                  borderColor: theme.colors.border,
+                },
+              ]}>
+              {selectedRating && (
+                <selectedRating.Icon
+                  size={16}
+                  color={selectedRating.color}
+                  strokeWidth={2.6}
+                />
+              )}
+              <Text
+                style={[
+                  styles.successStatValue,
+                  {color: theme.colors.text},
+                ]}>
+                {rating}/5
+              </Text>
+              <Text
+                style={[
+                  styles.successStatLabel,
+                  {color: theme.colors.textSecondary},
+                ]}>
+                Rating
+              </Text>
+            </View>
+
+            <View
+              style={[
+                styles.successStatMini,
+                {
+                  backgroundColor: theme.colors.surface,
+                  borderColor: theme.colors.border,
+                },
+              ]}>
+              <MessageCircle
+                size={16}
+                color="#6366F1"
+                strokeWidth={2.6}
+              />
+              <Text
+                style={[
+                  styles.successStatValue,
+                  {color: theme.colors.text},
+                ]}>
+                {feedback.length}
+              </Text>
+              <Text
+                style={[
+                  styles.successStatLabel,
+                  {color: theme.colors.textSecondary},
+                ]}>
+                Chars
+              </Text>
+            </View>
+          </View>
+
+          <Pressable
+            onPress={handleReset}
+            style={({pressed}) => [
+              styles.successPrimaryBtn,
               {
-                color: theme.colors.success,
+                backgroundColor: theme.colors.primary,
+                shadowColor: theme.colors.primary,
+                opacity: pressed ? 0.9 : 1,
               },
             ]}>
-            ✓
-          </Text>
+            <Send size={15} color="#FFFFFF" strokeWidth={2.6} />
+            <Text style={styles.successPrimaryBtnText}>
+              Send another
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={handleBack}
+            style={({pressed}) => [
+              styles.successSecondaryBtn,
+              {
+                borderColor: theme.colors.border,
+                backgroundColor: theme.colors.surface,
+                opacity: pressed ? 0.85 : 1,
+              },
+            ]}>
+            <Text
+              style={[
+                styles.successSecondaryBtnText,
+                {color: theme.colors.text},
+              ]}>
+              Back to settings
+            </Text>
+          </Pressable>
         </View>
-
-        <Text
-          style={[
-            styles.successTitle,
-            {
-              color: theme.colors.text,
-            },
-          ]}>
-          Thanks for your feedback!
-        </Text>
-
-        <Text
-          style={[
-            styles.successText,
-            {
-              color: theme.colors.textSecondary,
-            },
-          ]}>
-          Your feedback helps us make TodoMaster better.
-        </Text>
-
-        <Pressable
-          onPress={() => {
-            setSubmitted(false);
-            setRating(0);
-            setFeedback('');
-          }}
-          style={({pressed}) => [
-            styles.secondaryButton,
-            {
-              borderColor: theme.colors.border,
-              backgroundColor: theme.colors.surface,
-              opacity: pressed ? 0.85 : 1,
-            },
-          ]}>
-          <Text
-            style={[
-              styles.secondaryButtonText,
-              {
-                color: theme.colors.text,
-              },
-            ]}>
-            Send Another
-          </Text>
-        </Pressable>
-      </View>
+      </SafeAreaView>
     );
   }
 
+  /* --------------------------- MAIN FORM --------------------------- */
   return (
-    <ScrollView
-      showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
-      style={[
-        styles.container,
-        {
-          backgroundColor: theme.colors.background,
-        },
-      ]}
-      contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <Text
-          style={[
-            styles.eyebrow,
-            {
-              color: theme.colors.primary,
-            },
-          ]}>
-          WE VALUE YOUR OPINION
-        </Text>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          contentContainerStyle={styles.scrollContent}>
+          {/* HEADER */}
+          <View style={styles.header}>
+            <Pressable
+              onPress={handleBack}
+              style={styles.backBtn}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Go back">
+              <ArrowLeft
+                size={18}
+                color={theme.colors.text}
+                strokeWidth={2.6}
+              />
+            </Pressable>
 
-        <Text
-          style={[
-            styles.title,
-            {
-              color: theme.colors.text,
-            },
-          ]}>
-          Feedback
-        </Text>
+            <View style={styles.headerContent}>
+              <Text style={styles.title}>Feedback</Text>
+              <Text style={styles.subtitle}>
+                We read every message
+              </Text>
+            </View>
+          </View>
 
-        <Text
-          style={[
-            styles.subtitle,
-            {
-              color: theme.colors.textSecondary,
-            },
-          ]}>
-          Tell us what you like, what could be better, or what
-          you would love to see next.
-        </Text>
-      </View>
+          {/* HERO */}
+          <View
+            style={[
+              styles.heroCard,
+              {
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+              },
+            ]}>
+            <View
+              style={[
+                styles.heroIconWrap,
+                {backgroundColor: theme.colors.primary + '18'},
+              ]}>
+              <MessageCircle
+                size={22}
+                color={theme.colors.primary}
+                strokeWidth={2.6}
+              />
+            </View>
+            <Text
+              style={[styles.heroTitle, {color: theme.colors.text}]}>
+              How can we improve?
+            </Text>
+            <Text
+              style={[
+                styles.heroDesc,
+                {color: theme.colors.textSecondary},
+              ]}>
+              Report a bug, suggest a feature, or just say hi. Your
+              thoughts shape TodoMaster.
+            </Text>
+          </View>
 
-      <View
-        style={[
-          styles.card,
-          {
-            backgroundColor: theme.colors.surface,
-            borderColor: theme.colors.border,
-          },
-        ]}>
-        <Text
-          style={[
-            styles.sectionTitle,
-            {
-              color: theme.colors.text,
-            },
-          ]}>
-          How would you rate TodoMaster?
-        </Text>
+          {/* CATEGORY */}
+          <Text style={styles.sectionLabel}>CATEGORY</Text>
+          <View style={styles.categoryRow}>
+            {CATEGORIES.map(cat => {
+              const CatIcon = cat.Icon;
+              const selected = category === cat.key;
+              return (
+                <Pressable
+                  key={cat.key}
+                  onPress={() => {
+                    LayoutAnimation.configureNext(
+                      LayoutAnimation.Presets.easeInEaseOut,
+                    );
+                    setCategory(cat.key);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Category ${cat.label}`}
+                  style={[
+                    styles.categoryChip,
+                    {
+                      backgroundColor: selected
+                        ? cat.color + '18'
+                        : theme.colors.surface,
+                      borderColor: selected
+                        ? cat.color
+                        : theme.colors.border,
+                    },
+                  ]}>
+                  <CatIcon
+                    size={14}
+                    color={selected ? cat.color : theme.colors.textSecondary}
+                    strokeWidth={2.6}
+                  />
+                  <Text
+                    style={[
+                      styles.categoryText,
+                      {
+                        color: selected
+                          ? cat.color
+                          : theme.colors.textSecondary,
+                      },
+                    ]}>
+                    {cat.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
 
-        <View style={styles.ratingRow}>
-          {ratingOptions.map(option => {
-            const selected = rating === option.value;
+          {/* RATING */}
+          <Text style={styles.sectionLabel}>RATING</Text>
+          <View
+            style={[
+              styles.card,
+              {
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+              },
+            ]}>
+            <View style={styles.ratingRow}>
+              {RATING_OPTIONS.map(opt => {
+                const OptIcon = opt.Icon;
+                const selected = rating === opt.value;
+                return (
+                  <Pressable
+                    key={opt.value}
+                    onPress={() => {
+                      LayoutAnimation.configureNext(
+                        LayoutAnimation.Presets.easeInEaseOut,
+                      );
+                      setRating(opt.value);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Rate ${opt.label}`}
+                    style={[
+                      styles.ratingItem,
+                      {
+                        backgroundColor: selected
+                          ? opt.color + '15'
+                          : theme.colors.background,
+                        borderColor: selected
+                          ? opt.color
+                          : theme.colors.border,
+                      },
+                    ]}>
+                    <OptIcon
+                      size={22}
+                      color={
+                        selected ? opt.color : theme.colors.textLight
+                      }
+                      strokeWidth={2.4}
+                    />
+                    <Text
+                      style={[
+                        styles.ratingLabel,
+                        {
+                          color: selected
+                            ? opt.color
+                            : theme.colors.textSecondary,
+                        },
+                      ]}
+                      numberOfLines={1}>
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
 
-            return (
-              <Pressable
-                key={option.value}
-                onPress={() => setRating(option.value)}
+            {rating > 0 && (
+              <View
                 style={[
-                  styles.ratingItem,
-                  {
-                    backgroundColor: selected
-                      ? `${theme.colors.primary}12`
-                      : theme.colors.background,
-                    borderColor: selected
-                      ? theme.colors.primary
-                      : theme.colors.border,
-                  },
+                  styles.ratingFeedback,
+                  {backgroundColor: selectedRating.color + '12'},
                 ]}>
+                <Star
+                  size={12}
+                  color={selectedRating.color}
+                  strokeWidth={2.6}
+                  fill={selectedRating.color}
+                />
                 <Text
                   style={[
-                    styles.ratingNumber,
-                    {
-                      color: selected
-                        ? theme.colors.primary
-                        : theme.colors.text,
-                    },
+                    styles.ratingFeedbackText,
+                    {color: selectedRating.color},
                   ]}>
-                  {option.value}
+                  You rated us {rating} out of 5 · {selectedRating.label}
                 </Text>
+              </View>
+            )}
+          </View>
 
-                <Text
-                  style={[
-                    styles.ratingLabel,
-                    {
-                      color: selected
-                        ? theme.colors.primary
-                        : theme.colors.textSecondary,
-                    },
-                  ]}>
-                  {option.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
+          {/* TITLE */}
+          <Text style={styles.sectionLabel}>TITLE</Text>
+          <View
+            style={[
+              styles.inputWrap,
+              {
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+              },
+            ]}>
+            <TextInput
+              style={[styles.input, {color: theme.colors.text}]}
+              placeholder="Brief summary of your feedback"
+              placeholderTextColor={theme.colors.textLight}
+              value={title}
+              onChangeText={setTitle}
+              maxLength={80}
+              returnKeyType="next"
+            />
+          </View>
 
-      <View
-        style={[
-          styles.card,
-          {
-            backgroundColor: theme.colors.surface,
-            borderColor: theme.colors.border,
-          },
-        ]}>
-        <Text
-          style={[
-            styles.sectionTitle,
-            {
-              color: theme.colors.text,
-            },
-          ]}>
-          Your feedback
-        </Text>
+          {/* DETAILS */}
+          <Text style={styles.sectionLabel}>DETAILS</Text>
+          <View
+            style={[
+              styles.textAreaWrap,
+              {
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+              },
+            ]}>
+            <TextInput
+              style={[styles.textArea, {color: theme.colors.text}]}
+              placeholder="Describe your feedback in detail..."
+              placeholderTextColor={theme.colors.textLight}
+              value={feedback}
+              onChangeText={setFeedback}
+              multiline
+              maxLength={MAX_FEEDBACK}
+              textAlignVertical="top"
+            />
+            <Text
+              style={[
+                styles.counterText,
+                {color: counterColor},
+              ]}>
+              {feedbackLen}/{MAX_FEEDBACK}
+            </Text>
+          </View>
 
-        <TextInput
-          value={feedback}
-          onChangeText={setFeedback}
-          placeholder="Write your feedback here..."
-          placeholderTextColor={theme.colors.textLight}
-          multiline
-          maxLength={500}
-          textAlignVertical="top"
-          style={[
-            styles.input,
-            {
-              color: theme.colors.text,
-              backgroundColor: theme.colors.background,
-              borderColor: theme.colors.border,
-            },
-          ]}
-        />
+          {/* EMAIL (OPTIONAL) */}
+          <Text style={styles.sectionLabel}>
+            EMAIL <Text style={styles.sectionLabelOptional}>(optional)</Text>
+          </Text>
+          <View
+            style={[
+              styles.inputWrap,
+              styles.inputWrapWithIcon,
+              {
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+              },
+            ]}>
+            <Mail
+              size={15}
+              color={theme.colors.textLight}
+              strokeWidth={2.4}
+            />
+            <TextInput
+              style={[styles.input, {color: theme.colors.text}]}
+              placeholder="you@example.com"
+              placeholderTextColor={theme.colors.textLight}
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              maxLength={80}
+            />
+          </View>
+          <Text
+            style={[
+              styles.helperText,
+              {color: theme.colors.textLight},
+            ]}>
+            We'll only use this to reply to your feedback
+          </Text>
 
-        <Text
-          style={[
-            styles.characterCount,
-            {
-              color: theme.colors.textLight,
-            },
-          ]}>
-          {feedback.length}/500
-        </Text>
-      </View>
+          {/* ERROR */}
+          {!!error && (
+            <View
+              style={[
+                styles.errorBox,
+                {
+                  backgroundColor: theme.colors.danger + '12',
+                  borderColor: theme.colors.danger + '40',
+                },
+              ]}>
+              <Info
+                size={13}
+                color={theme.colors.danger}
+                strokeWidth={2.6}
+              />
+              <Text
+                style={[
+                  styles.errorText,
+                  {color: theme.colors.danger},
+                ]}>
+                {error}
+              </Text>
+            </View>
+          )}
 
-      <View
-        style={[
-          styles.infoCard,
-          {
-            backgroundColor: `${theme.colors.primary}0D`,
-          },
-        ]}>
-        <Text
-          style={[
-            styles.infoTitle,
-            {
-              color: theme.colors.primary,
-            },
-          ]}>
-          💡 What makes feedback useful?
-        </Text>
+          {/* SUBMIT */}
+          <Pressable
+            onPress={handleSubmit}
+            disabled={!isFormValid || submitting}
+            accessibilityRole="button"
+            accessibilityLabel="Submit feedback"
+            style={({pressed}) => [
+              styles.submitBtn,
+              {
+                backgroundColor: isFormValid
+                  ? theme.colors.primary
+                  : theme.colors.border,
+                shadowColor: isFormValid
+                  ? theme.colors.primary
+                  : 'transparent',
+                opacity: pressed ? 0.9 : 1,
+              },
+            ]}>
+            <Send
+              size={16}
+              color={isFormValid ? '#FFFFFF' : theme.colors.textLight}
+              strokeWidth={2.6}
+            />
+            <Text
+              style={[
+                styles.submitBtnText,
+                {
+                  color: isFormValid
+                    ? '#FFFFFF'
+                    : theme.colors.textLight,
+                },
+              ]}>
+              {submitting ? 'Sending...' : 'Submit Feedback'}
+            </Text>
+          </Pressable>
 
-        <Text
-          style={[
-            styles.infoText,
-            {
-              color: theme.colors.textSecondary,
-            },
-          ]}>
-          Tell us about bugs, confusing screens, missing features,
-          or anything that would make your daily workflow easier.
-        </Text>
-      </View>
+          {/* TIP */}
+          <View
+            style={[
+              styles.tipCard,
+              {
+                backgroundColor: theme.colors.primary + '0D',
+                borderColor: theme.colors.primary + '25',
+              },
+            ]}>
+            <View
+              style={[
+                styles.tipIconWrap,
+                {backgroundColor: theme.colors.primary + '18'},
+              ]}>
+              <Lightbulb
+                size={14}
+                color={theme.colors.primary}
+                strokeWidth={2.6}
+              />
+            </View>
+            <View style={{flex: 1, minWidth: 0}}>
+              <Text
+                style={[
+                  styles.tipTitle,
+                  {color: theme.colors.primary},
+                ]}>
+                What makes feedback great?
+              </Text>
+              <Text
+                style={[
+                  styles.tipText,
+                  {color: theme.colors.text},
+                ]}>
+                Mention what you were doing, what you expected, and what
+                happened instead. Screenshots help too!
+              </Text>
+            </View>
+          </View>
 
-      <Pressable
-        onPress={handleSubmit}
-        disabled={!rating || !feedback.trim()}
-        style={({pressed}) => [
-          styles.submitButton,
-          {
-            backgroundColor:
-              rating && feedback.trim()
-                ? theme.colors.primary
-                : theme.colors.border,
-            opacity: pressed ? 0.85 : 1,
-          },
-        ]}>
-        <Text
-          style={[
-            styles.submitButtonText,
-            {
-              color:
-                rating && feedback.trim()
-                  ? '#FFFFFF'
-                  : theme.colors.textLight,
-            },
-          ]}>
-          Submit Feedback
-        </Text>
-      </Pressable>
-    </ScrollView>
+          <View style={{height: 20}} />
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+/* --------------------------- STYLES --------------------------- */
 
-  content: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 40,
-  },
+function createStyles(theme, insets) {
+  return StyleSheet.create({
+    flex: {flex: 1},
+    safeArea: {
+      flex: 1,
+      backgroundColor: theme.colors.background,
+    },
+    scrollContent: {
+      paddingHorizontal: 20,
+      paddingTop: 12,
+      paddingBottom: Math.max(insets.bottom, 12) + 30,
+    },
 
-  header: {
-    marginBottom: 22,
-  },
+    /* Header */
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      marginBottom: 18,
+    },
+    backBtn: {
+      width: 42,
+      height: 42,
+      borderRadius: 13,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.surface,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    headerContent: {
+      flex: 1,
+      minWidth: 0,
+    },
+    title: {
+      fontSize: 24,
+      fontWeight: '900',
+      color: theme.colors.text,
+      letterSpacing: -0.6,
+    },
+    subtitle: {
+      marginTop: 2,
+      fontSize: 12,
+      fontWeight: '500',
+      color: theme.colors.textSecondary,
+      letterSpacing: 0.1,
+    },
 
-  eyebrow: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.4,
-    marginBottom: 6,
-  },
+    /* Hero */
+    heroCard: {
+      alignItems: 'center',
+      padding: 20,
+      borderRadius: 20,
+      borderWidth: 1,
+      marginBottom: 18,
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 4},
+      shadowOpacity: 0.05,
+      shadowRadius: 12,
+      elevation: 2,
+    },
+    heroIconWrap: {
+      width: 54,
+      height: 54,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 12,
+    },
+    heroTitle: {
+      fontSize: 17,
+      fontWeight: '900',
+      letterSpacing: -0.3,
+      marginBottom: 6,
+      textAlign: 'center',
+    },
+    heroDesc: {
+      fontSize: 13,
+      fontWeight: '500',
+      textAlign: 'center',
+      lineHeight: 19,
+      maxWidth: 280,
+      letterSpacing: 0.1,
+    },
 
-  title: {
-    fontSize: 30,
-    fontWeight: '800',
-    letterSpacing: -0.8,
-  },
+    /* Section label */
+    sectionLabel: {
+      fontSize: 10.5,
+      fontWeight: '900',
+      letterSpacing: 1.4,
+      color: theme.colors.textLight,
+      marginTop: 6,
+      marginBottom: 8,
+      marginLeft: 4,
+    },
+    sectionLabelOptional: {
+      fontSize: 10,
+      fontWeight: '700',
+      letterSpacing: 0.5,
+      color: theme.colors.textLight,
+      textTransform: 'none',
+    },
 
-  subtitle: {
-    fontSize: 14,
-    lineHeight: 21,
-    marginTop: 8,
-  },
+    /* Category */
+    categoryRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: 16,
+    },
+    categoryChip: {
+      flex: 1,
+      minWidth: 0,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 5,
+      paddingVertical: 10,
+      paddingHorizontal: 6,
+      borderRadius: 12,
+      borderWidth: 1.5,
+    },
+    categoryText: {
+      fontSize: 11.5,
+      fontWeight: '800',
+      letterSpacing: 0.2,
+    },
 
-  card: {
-    borderWidth: 1,
-    borderRadius: 22,
-    padding: 18,
-    marginBottom: 14,
-  },
+    /* Card */
+    card: {
+      padding: 14,
+      borderRadius: 18,
+      borderWidth: 1,
+      marginBottom: 16,
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 3},
+      shadowOpacity: 0.04,
+      shadowRadius: 10,
+      elevation: 2,
+    },
 
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    marginBottom: 14,
-  },
+    /* Rating */
+    ratingRow: {
+      flexDirection: 'row',
+      gap: 6,
+    },
+    ratingItem: {
+      flex: 1,
+      minWidth: 0,
+      minHeight: 70,
+      borderWidth: 1.5,
+      borderRadius: 13,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 8,
+      paddingHorizontal: 4,
+    },
+    ratingLabel: {
+      fontSize: 9,
+      fontWeight: '800',
+      marginTop: 5,
+      letterSpacing: 0.1,
+    },
+    ratingFeedback: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginTop: 12,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+      borderRadius: 10,
+    },
+    ratingFeedbackText: {
+      flex: 1,
+      fontSize: 11.5,
+      fontWeight: '800',
+      letterSpacing: 0.1,
+    },
 
-  ratingRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
+    /* Input */
+    inputWrap: {
+      paddingHorizontal: 14,
+      paddingVertical: 4,
+      borderRadius: 14,
+      borderWidth: 1.5,
+      marginBottom: 14,
+    },
+    inputWrapWithIcon: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingVertical: 2,
+    },
+    input: {
+      flex: 1,
+      fontSize: 14,
+      fontWeight: '600',
+      paddingVertical: 11,
+      padding: 0,
+      letterSpacing: -0.1,
+    },
+    textAreaWrap: {
+      paddingHorizontal: 14,
+      paddingTop: 12,
+      paddingBottom: 8,
+      borderRadius: 14,
+      borderWidth: 1.5,
+      marginBottom: 14,
+    },
+    textArea: {
+      minHeight: 120,
+      fontSize: 14,
+      fontWeight: '500',
+      padding: 0,
+      lineHeight: 20,
+      letterSpacing: -0.1,
+    },
+    counterText: {
+      alignSelf: 'flex-end',
+      marginTop: 6,
+      fontSize: 10.5,
+      fontWeight: '800',
+      letterSpacing: 0.2,
+    },
+    helperText: {
+      fontSize: 10.5,
+      fontWeight: '600',
+      letterSpacing: 0.1,
+      marginTop: -8,
+      marginBottom: 14,
+      marginLeft: 4,
+    },
 
-  ratingItem: {
-    width: '18%',
-    minHeight: 68,
-    borderWidth: 1,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+    /* Error */
+    errorBox: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderRadius: 12,
+      borderWidth: 1,
+      marginBottom: 14,
+    },
+    errorText: {
+      flex: 1,
+      fontSize: 12,
+      fontWeight: '700',
+      letterSpacing: 0.1,
+    },
 
-  ratingNumber: {
-    fontSize: 18,
-    fontWeight: '800',
-  },
+    /* Submit */
+    submitBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      height: 54,
+      borderRadius: 16,
+      marginTop: 6,
+      shadowOffset: {width: 0, height: 6},
+      shadowOpacity: 0.3,
+      shadowRadius: 12,
+      elevation: 5,
+    },
+    submitBtnText: {
+      fontSize: 14.5,
+      fontWeight: '900',
+      letterSpacing: 0.2,
+    },
 
-  ratingLabel: {
-    fontSize: 8,
-    fontWeight: '700',
-    marginTop: 4,
-  },
+    /* Tip */
+    tipCard: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 12,
+      padding: 14,
+      borderRadius: 16,
+      borderWidth: 1,
+      marginTop: 14,
+    },
+    tipIconWrap: {
+      width: 32,
+      height: 32,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    tipTitle: {
+      fontSize: 12,
+      fontWeight: '900',
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
+      marginBottom: 3,
+    },
+    tipText: {
+      fontSize: 12.5,
+      fontWeight: '600',
+      lineHeight: 18,
+      letterSpacing: 0.1,
+    },
 
-  input: {
-    minHeight: 150,
-    borderWidth: 1,
-    borderRadius: 15,
-    paddingHorizontal: 14,
-    paddingTop: 14,
-    paddingBottom: 14,
-    fontSize: 14,
-    lineHeight: 21,
-  },
-
-  characterCount: {
-    fontSize: 10,
-    textAlign: 'right',
-    marginTop: 6,
-  },
-
-  infoCard: {
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 18,
-  },
-
-  infoTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    marginBottom: 6,
-  },
-
-  infoText: {
-    fontSize: 12,
-    lineHeight: 19,
-  },
-
-  submitButton: {
-    height: 52,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  submitButtonText: {
-    fontSize: 14,
-    fontWeight: '800',
-  },
-
-  successContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 28,
-  },
-
-  successIcon: {
-    width: 82,
-    height: 82,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-
-  successIconText: {
-    fontSize: 38,
-    fontWeight: '800',
-  },
-
-  successTitle: {
-    fontSize: 23,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-
-  successText: {
-    fontSize: 14,
-    lineHeight: 21,
-    textAlign: 'center',
-    marginTop: 8,
-    maxWidth: 300,
-  },
-
-  secondaryButton: {
-    marginTop: 24,
-    minWidth: 150,
-    height: 46,
-    paddingHorizontal: 20,
-    borderWidth: 1,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  secondaryButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-});
+    /* Success */
+    successContainer: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 28,
+    },
+    successIconOuter: {
+      width: 110,
+      height: 110,
+      borderRadius: 36,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 22,
+    },
+    successIconInner: {
+      width: 78,
+      height: 78,
+      borderRadius: 26,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#10B981',
+      shadowOffset: {width: 0, height: 8},
+      shadowOpacity: 0.35,
+      shadowRadius: 16,
+      elevation: 8,
+    },
+    successTitle: {
+      fontSize: 26,
+      fontWeight: '900',
+      color: theme.colors.text,
+      letterSpacing: -0.6,
+      textAlign: 'center',
+      marginBottom: 8,
+    },
+    successText: {
+      fontSize: 14,
+      lineHeight: 21,
+      textAlign: 'center',
+      color: theme.colors.textSecondary,
+      maxWidth: 300,
+      fontWeight: '500',
+      marginBottom: 22,
+    },
+    successStatsRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: 24,
+    },
+    successStatMini: {
+      minWidth: 110,
+      alignItems: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      borderRadius: 15,
+      borderWidth: 1,
+    },
+    successStatValue: {
+      fontSize: 17,
+      fontWeight: '900',
+      letterSpacing: -0.4,
+      marginTop: 6,
+      lineHeight: 19,
+    },
+    successStatLabel: {
+      fontSize: 10,
+      fontWeight: '700',
+      letterSpacing: 0.4,
+      marginTop: 2,
+      textTransform: 'uppercase',
+    },
+    successPrimaryBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      minWidth: 200,
+      paddingVertical: 14,
+      borderRadius: 14,
+      shadowOffset: {width: 0, height: 6},
+      shadowOpacity: 0.3,
+      shadowRadius: 12,
+      elevation: 5,
+    },
+    successPrimaryBtnText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '900',
+      letterSpacing: 0.2,
+    },
+    successSecondaryBtn: {
+      marginTop: 12,
+      minWidth: 200,
+      paddingVertical: 12,
+      paddingHorizontal: 20,
+      borderWidth: 1.5,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    successSecondaryBtnText: {
+      fontSize: 13,
+      fontWeight: '800',
+      letterSpacing: 0.2,
+    },
+  });
+}
 
 export default FeedbackScreen;

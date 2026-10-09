@@ -5,27 +5,36 @@ import {
   StyleSheet,
 } from 'react-native';
 
+import {
+  List,
+  Clock,
+  CheckCircle2,
+} from 'lucide-react-native';
+
 import useTheme from '../../hooks/useTheme';
 
 const FILTERS = [
   {
     key: 'all',
     label: 'All',
+    color: '#6366F1',
+    Icon: List,
   },
   {
     key: 'active',
     label: 'Active',
+    color: '#F59E0B',
+    Icon: Clock,
   },
   {
     key: 'completed',
     label: 'Done',
+    color: '#10B981',
+    Icon: CheckCircle2,
   },
 ];
 
-function FilterTabs({
-  selectedFilter,
-  onChange,
-}) {
+function FilterTabs({selectedFilter, onChange}) {
   const {theme} = useTheme();
 
   const styles = createStyles(theme);
@@ -33,28 +42,33 @@ function FilterTabs({
   return (
     <View style={styles.container}>
       {FILTERS.map(filter => {
-        const selected =
-          selectedFilter === filter.key;
+        const selected = selectedFilter === filter.key;
+        const IconComponent = filter.Icon;
 
         return (
           <Pressable
             key={filter.key}
             style={[
               styles.tab,
-              selected && styles.selectedTab,
+              selected && {
+                backgroundColor: filter.color,
+                borderColor: filter.color,
+              },
             ]}
-            onPress={() =>
-              onChange(filter.key)
-            }
+            onPress={() => onChange(filter.key)}
             accessibilityRole="tab"
-            accessibilityState={{
-              selected,
-            }}>
+            accessibilityState={{selected}}>
+            <IconComponent
+              size={15}
+              color={selected ? '#FFFFFF' : filter.color}
+              strokeWidth={2.6}
+            />
+
             <Text
               style={[
                 styles.text,
-                selected &&
-                  styles.selectedText,
+                {color: selected ? '#FFFFFF' : filter.color},
+                selected && styles.selectedText,
               ]}>
               {filter.label}
             </Text>
@@ -69,33 +83,32 @@ function createStyles(theme) {
   return StyleSheet.create({
     container: {
       flexDirection: 'row',
-      padding: 4,
+      gap: 8,
       marginVertical: theme.spacing.lg,
-      borderRadius: theme.radius.lg,
-      backgroundColor: theme.colors.border,
     },
 
     tab: {
       flex: 1,
       minHeight: 44,
+      flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: theme.radius.md,
-    },
-
-    selectedTab: {
+      gap: 6,
+      paddingHorizontal: 8,
+      borderRadius: theme.radius.lg,
       backgroundColor: theme.colors.surface,
+      borderWidth: 1.5,
+      borderColor: theme.colors.border,
     },
 
     text: {
       fontSize: theme.typography.bodySmall,
-      fontWeight: '600',
-      color: theme.colors.textSecondary,
+      fontWeight: '800',
+      letterSpacing: 0.2,
     },
 
     selectedText: {
       fontWeight: '800',
-      color: theme.colors.text,
     },
   });
 }

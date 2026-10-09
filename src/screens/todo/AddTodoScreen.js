@@ -1,3 +1,4 @@
+import React, {useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -8,52 +9,462 @@ import {
   KeyboardAvoidingView,
   Platform,
   Switch,
+  Alert,
+  Animated,
+  LayoutAnimation,
+  UIManager,
 } from 'react-native';
-
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {useState} from 'react';
+import Voice from '@react-native-voice/voice';
+import {
+  Mic,
+  Square,
+  ArrowLeft,
+  Calendar as CalendarIcon,
+  Bell,
+  Palette,
+  Tag,
+  Flag,
+  Sparkles,
+  Languages,
+  ChevronLeft,
+  ChevronRight,
+  Check,
+  Play,
+  Type,
+  X,
+} from 'lucide-react-native';
 
-import AppButton from '../../components/common/AppButton';
 import useTheme from '../../hooks/useTheme';
 import {useTodoContext} from '../../context/TodoContext';
 
-const PRIORITIES = ['low', 'medium', 'high'];
+// Enable LayoutAnimation on Android
+if (
+  Platform.OS === 'android' &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+/* ------------------------------- CONSTANTS ------------------------------- */
+
+const PRIORITIES = [
+  {key: 'low', label: 'Low', color: '#10B981'},
+  {key: 'medium', label: 'Medium', color: '#F59E0B'},
+  {key: 'high', label: 'High', color: '#EF4444'},
+];
 
 const CATEGORIES = [
-  'Personal',
-  'Work',
-  'Learning',
-  'Shopping',
-  'Health',
-  'Project',
+  {key: 'Personal', icon: '👤'},
+  {key: 'Work', icon: '💼'},
+  {key: 'Learning', icon: '📚'},
+  {key: 'Shopping', icon: '🛒'},
+  {key: 'Health', icon: '💪'},
+  {key: 'Project', icon: '🚀'},
+  {key: 'Finance', icon: '💰'},
+  {key: 'Family', icon: '👨‍👩‍👧'},
+  {key: 'Home', icon: '🏠'},
+  {key: 'Travel', icon: '✈️'},
+  {key: 'Other', icon: '📌'},
 ];
 
-const DUE_DATE_OPTIONS = [
-  'No date',
-  'Today',
-  'Tomorrow',
-  'Next week',
+const COLORS = [
+  '#6366F1',
+  '#EC4899',
+  '#14B8A6',
+  '#F59E0B',
+  '#EF4444',
+  '#8B5CF6',
+  '#10B981',
+  '#3B82F6',
 ];
+
+const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+/* -------------------------------- HELPERS -------------------------------- */
+
+const pad = value => String(value).padStart(2, '0');
+
+const dateKey = date =>
+  `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+
+const formatDate = date =>
+  date.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+
+const startOfToday = () => {
+  const t = new Date();
+  return new Date(t.getFullYear(), t.getMonth(), t.getDate());
+};
+
+const getTomorrow = () => {
+  const d = startOfToday();
+  d.setDate(d.getDate() + 1);
+  return d;
+};
+
+const getNextWeek = () => {
+  const d = startOfToday();
+  d.setDate(d.getDate() + 7);
+  return d;
+};
+
+const getWeekend = () => {
+  const d = startOfToday();
+  const day = d.getDay();
+  const diff = (6 - day + 7) % 7 || 7;
+  d.setDate(d.getDate() + diff);
+  return d;
+};
+
+/* ------------------------------- COMPONENT ------------------------------- */
 
 function AddTodoScreen({navigation}) {
   const {addTodo} = useTodoContext();
   const {theme} = useTheme();
   const styles = createStyles(theme);
 
+  const today = startOfToday();
+
+  /* ------------------------------- STATE ------------------------------- */
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('Personal');
   const [priority, setPriority] = useState('medium');
-  const [dueDate, setDueDate] = useState('No date');
+  const [color, setColor] = useState(COLORS[0]);
+  const [dueDate, setDueDate] = useState(null);
+  const [calendarMonth, setCalendarMonth] = useState(
+    new Date(today.getFullYear(), today.getMonth(), 1),
+  );
+  const [showCalendar, setShowCalendar] = useState(false);
   const [reminder, setReminder] = useState(false);
-
-  const [showCategoryList, setShowCategoryList] = useState(false);
-  const [showDueDateList, setShowDueDateList] = useState(false);
-
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  function handleSave() {
+  // Voice
+  const [voiceTarget, setVoiceTarget] = useState(null);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceLanguage, setVoiceLanguage] = useState('en-IN');
+
+  // Animations
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const errorAnim = useRef(new Animated.Value(0)).current;
+  const titleInputRef = useRef(null);
+
+  /* ------------------------------ VOICE FX ----------------------------- */
+  useEffect(() => {
+    Voice.onSpeechResults = event => {
+      const spokenText = event.value?.[0];
+      if (!spokenText) return;
+
+      if (voiceTarget === 'title') {
+        setTitle(prev => (prev ? `${prev} ${spokenText}` : spokenText));
+      }
+      if (voiceTarget === 'description') {
+        setDescription(prev =>
+          prev ? `${prev} ${spokenText}` : spokenText,
+        );
+      }
+      setIsListening(false);
+    };
+
+    Voice.onSpeechError = () => {
+      setIsListening(false);
+      Alert.alert(
+        'Voice Input',
+        'Speech recognition stopped. Please try again.',
+      );
+    };
+
+    Voice.onSpeechEnd = () => setIsListening(false);
+
+    return () => {
+      Voice.destroy().then(Voice.removeAllListeners).catch(() => {});
+    };
+  }, [voiceTarget]);
+
+  /* --------------------------- PULSE ANIMATION ------------------------- */
+  useEffect(() => {
+    if (isListening) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.5,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+      loop.start();
+      return () => loop.stop();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [isListening, pulseAnim]);
+
+  /* --------------------------- ERROR ANIMATION ------------------------- */
+  useEffect(() => {
+    Animated.timing(errorAnim, {
+      toValue: error ? 1 : 0,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  }, [error, errorAnim]);
+
+  /* ------------------------------- ACTIONS ----------------------------- */
+  function startVoiceInput(target) {
+    setVoiceTarget(target);
+    Voice.start(voiceLanguage)
+      .then(() => setIsListening(true))
+      .catch(() => {
+        setIsListening(false);
+        Alert.alert(
+          'Voice Input',
+          'Could not start speech recognition. Check microphone permission.',
+        );
+      });
+  }
+
+  function stopVoiceInput() {
+    Voice.stop().catch(() => {});
+    setIsListening(false);
+  }
+
+  function toggleVoice(target) {
+    const active = isListening && voiceTarget === target;
+    if (active || isListening) {
+      stopVoiceInput();
+    } else {
+      startVoiceInput(target);
+    }
+  }
+
+  function handleTranslate(target) {
+    const text = target === 'title' ? title : description;
+    if (!text.trim()) {
+      Alert.alert('Empty', 'Please enter some text first.');
+      return;
+    }
+    Alert.alert(
+      'Translate',
+      'Real Google Translate ke liye API key lagani padegi.\nAbhi demo mode me hai.',
+    );
+  }
+
+  function changeMonth(amount) {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setCalendarMonth(
+      prev => new Date(prev.getFullYear(), prev.getMonth() + amount, 1),
+    );
+  }
+
+  function toggleCalendar() {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setShowCalendar(v => !v);
+  }
+
+  function pickDate(date) {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setDueDate(dateKey(date));
+    setShowCalendar(false);
+  }
+
+  /* ------------------------------ CALENDAR ----------------------------- */
+  function renderCalendar() {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
+    const firstWeekday = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    const cells = [
+      ...Array(firstWeekday).fill(null),
+      ...Array.from({length: daysInMonth}, (_, i) => i + 1),
+    ];
+    while (cells.length % 7 !== 0) cells.push(null);
+
+    return (
+      <View style={styles.calendar}>
+        {/* Month nav */}
+        <View style={styles.calendarHeader}>
+          <Pressable
+            style={styles.monthArrow}
+            onPress={() => changeMonth(-1)}
+            hitSlop={8}>
+            <ChevronLeft size={20} color={theme.colors.text} strokeWidth={2.4} />
+          </Pressable>
+
+          <Text style={styles.monthTitle}>
+            {MONTHS[month]} {year}
+          </Text>
+
+          <Pressable
+            style={styles.monthArrow}
+            onPress={() => changeMonth(1)}
+            hitSlop={8}>
+            <ChevronRight size={20} color={theme.colors.text} strokeWidth={2.4} />
+          </Pressable>
+        </View>
+
+        {/* Weekday row */}
+        <View style={styles.calendarGrid}>
+          {WEEKDAYS.map((d, i) => (
+            <View key={`wd-${i}`} style={styles.calendarCell}>
+              <Text style={styles.weekdayText}>{d}</Text>
+            </View>
+          ))}
+
+          {cells.map((day, index) => {
+            if (day === null) {
+              return <View key={`e-${index}`} style={styles.calendarCell} />;
+            }
+
+            const current = new Date(year, month, day);
+            const selected = dueDate === dateKey(current);
+            const isToday = dateKey(current) === dateKey(today);
+
+            return (
+              <Pressable
+                key={`${year}-${month}-${day}`}
+                style={styles.calendarCell}
+                onPress={() => pickDate(current)}>
+                <View
+                  style={[
+                    styles.dayCircle,
+                    selected && {
+                      backgroundColor: theme.colors.primary,
+                      borderColor: theme.colors.primary,
+                    },
+                    isToday &&
+                      !selected && {
+                        borderColor: theme.colors.primary,
+                      },
+                  ]}>
+                  <Text
+                    style={[
+                      styles.dayText,
+                      isToday && {color: theme.colors.primary, fontWeight: '800'},
+                      selected && styles.selectedDayText,
+                    ]}>
+                    {day}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* Quick chips */}
+        <View style={styles.quickRow}>
+          <QuickChip
+            label="Today"
+            onPress={() => pickDate(today)}
+            styles={styles}
+            theme={theme}
+          />
+          <QuickChip
+            label="Tomorrow"
+            onPress={() => pickDate(getTomorrow())}
+            styles={styles}
+            theme={theme}
+          />
+          <QuickChip
+            label="Next Week"
+            onPress={() => pickDate(getNextWeek())}
+            styles={styles}
+            theme={theme}
+          />
+          <QuickChip
+            label="Weekend"
+            onPress={() => pickDate(getWeekend())}
+            styles={styles}
+            theme={theme}
+          />
+        </View>
+      </View>
+    );
+  }
+
+  /* ------------------------------ MIC BUTTON --------------------------- */
+  function renderMicButton(target, size = 44) {
+    const active = isListening && voiceTarget === target;
+
+    return (
+      <View
+        style={{
+          width: size,
+          height: size,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+        {active && (
+          <Animated.View
+            style={[
+              styles.micPulse,
+              {
+                width: size,
+                height: size,
+                borderRadius: size / 2,
+                transform: [{scale: pulseAnim}],
+                opacity: pulseAnim.interpolate({
+                  inputRange: [1, 1.5],
+                  outputRange: [0.55, 0],
+                }),
+              },
+            ]}
+          />
+        )}
+        <Pressable
+          onPress={() => toggleVoice(target)}
+          hitSlop={8}
+          style={[
+            styles.micButton,
+            {
+              width: size,
+              height: size,
+              borderRadius: size / 2,
+            },
+            active && styles.micButtonActive,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={
+            active ? 'Stop voice input' : `Start voice input for ${target}`
+          }
+          accessibilityState={{selected: active}}>
+          {active ? (
+            <Square size={16} color="#FFFFFF" fill="#FFFFFF" strokeWidth={2} />
+          ) : (
+            <Mic size={20} color="#FFFFFF" strokeWidth={2.4} />
+          )}
+        </Pressable>
+      </View>
+    );
+  }
+
+  /* ------------------------------ SAVE --------------------------------- */
+  function handleSave(startImmediately = false) {
     setError('');
 
     const cleanTitle = title.trim();
@@ -63,29 +474,42 @@ function AddTodoScreen({navigation}) {
       setError('Please enter a todo title.');
       return;
     }
-
     if (cleanTitle.length < 2) {
       setError('Todo title must be at least 2 characters.');
       return;
     }
+    if (loading) return;
 
     setLoading(true);
+    const now = new Date();
 
     const newTodo = {
       title: cleanTitle,
       description: cleanDescription,
       category,
       priority,
+      color,
       dueDate,
       reminder,
+      createdAt: now.toISOString(),
+      startedAt: startImmediately ? now.toISOString() : null,
+      status: startImmediately ? 'in-progress' : 'pending',
     };
 
-    setTimeout(() => {
+    try {
       addTodo(newTodo);
       setLoading(false);
       navigation.goBack();
-    }, 500);
+    } catch (e) {
+      setLoading(false);
+      setError('Could not save todo. Please try again.');
+    }
   }
+
+  /* ------------------------------ RENDER ------------------------------- */
+  const titleActive = isListening && voiceTarget === 'title';
+  const descActive = isListening && voiceTarget === 'description';
+  const anyListening = isListening;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -96,224 +520,438 @@ function AddTodoScreen({navigation}) {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
-          <View style={styles.container}>
-            <View style={styles.header}>
-              <Pressable
-                style={styles.backButton}
-                onPress={() => navigation.goBack()}>
-                <Text style={styles.backText}>‹</Text>
-              </Pressable>
+          {/* HEADER */}
+          <View style={styles.header}>
+            <Pressable
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+              hitSlop={12}>
+              <ArrowLeft size={20} color={theme.colors.text} strokeWidth={2.4} />
+            </Pressable>
 
-              <View style={styles.headerTextContainer}>
-                <Text style={styles.headerTitle}>New Todo</Text>
-
-                <Text style={styles.headerSubtitle}>
-                  Add something you want to get done.
-                </Text>
-              </View>
+            <View style={styles.headerTextContainer}>
+              <Text style={styles.headerTitle}>New Task</Text>
+              <Text style={styles.headerSubtitle}>
+                Plan it. Focus on it. Get it done.
+              </Text>
             </View>
+          </View>
 
-            <View style={styles.form}>
-              <View style={styles.field}>
-                <Text style={styles.label}>Title</Text>
-
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. Learn React Native"
-                  placeholderTextColor={
-                    theme.colors.textLight
-                  }
-                  value={title}
-                  onChangeText={setTitle}
-                  maxLength={100}
-                />
-
-                <Text style={styles.helper}>
-                  {title.length}/100
-                </Text>
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Description</Text>
-
-                <TextInput
-                  style={[styles.input, styles.textArea]}
-                  placeholder="Add some details..."
-                  placeholderTextColor={
-                    theme.colors.textLight
-                  }
-                  value={description}
-                  onChangeText={setDescription}
-                  multiline
-                  numberOfLines={5}
-                  textAlignVertical="top"
-                  maxLength={500}
-                />
-
-                <Text style={styles.helper}>
-                  {description.length}/500
-                </Text>
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Priority</Text>
-
-                <View style={styles.optionsRow}>
-                  {PRIORITIES.map(item => {
-                    const selected = priority === item;
-
-                    return (
-                      <Pressable
-                        key={item}
-                        style={[
-                          styles.option,
-                          selected && styles.selectedOption,
-                        ]}
-                        onPress={() => setPriority(item)}>
-                        <Text
-                          style={[
-                            styles.optionText,
-                            selected &&
-                              styles.selectedOptionText,
-                          ]}>
-                          {item}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Category</Text>
-
-                <Pressable
-                  style={styles.select}
-                  onPress={() =>
-                    setShowCategoryList(current => !current)
-                  }>
-                  <Text style={styles.selectText}>
-                    {category}
-                  </Text>
-
-                  <Text style={styles.selectArrow}>
-                    {showCategoryList ? '⌃' : '⌄'}
-                  </Text>
-                </Pressable>
-
-                {showCategoryList ? (
-                  <View style={styles.dropdown}>
-                    {CATEGORIES.map(item => (
-                      <Pressable
-                        key={item}
-                        style={[
-                          styles.dropdownItem,
-                          item === category &&
-                            styles.selectedDropdownItem,
-                        ]}
-                        onPress={() => {
-                          setCategory(item);
-                          setShowCategoryList(false);
-                        }}>
-                        <Text
-                          style={[
-                            styles.dropdownText,
-                            item === category &&
-                              styles.selectedDropdownText,
-                          ]}>
-                          {item}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                ) : null}
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Due Date</Text>
-
-                <Pressable
-                  style={styles.select}
-                  onPress={() =>
-                    setShowDueDateList(current => !current)
-                  }>
-                  <Text style={styles.selectText}>
-                    {dueDate}
-                  </Text>
-
-                  <Text style={styles.selectArrow}>
-                    {showDueDateList ? '⌃' : '⌄'}
-                  </Text>
-                </Pressable>
-
-                {showDueDateList ? (
-                  <View style={styles.dropdown}>
-                    {DUE_DATE_OPTIONS.map(item => (
-                      <Pressable
-                        key={item}
-                        style={[
-                          styles.dropdownItem,
-                          item === dueDate &&
-                            styles.selectedDropdownItem,
-                        ]}
-                        onPress={() => {
-                          setDueDate(item);
-                          setShowDueDateList(false);
-                        }}>
-                        <Text
-                          style={[
-                            styles.dropdownText,
-                            item === dueDate &&
-                              styles.selectedDropdownText,
-                          ]}>
-                          {item}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                ) : null}
-              </View>
-
-              <View style={styles.reminderRow}>
-                <View style={styles.reminderTextContainer}>
-                  <Text style={styles.label}>Reminder</Text>
-
-                  <Text style={styles.reminderDescription}>
-                    Get reminded about this todo.
-                  </Text>
-                </View>
-
-                <Switch
-                  value={reminder}
-                  onValueChange={setReminder}
-                  trackColor={{
-                    false: theme.colors.border,
-                    true: theme.colors.primary,
-                  }}
-                  thumbColor={theme.colors.white}
-                />
-              </View>
-
-              {error ? (
-                <View style={styles.errorBox}>
-                  <Text style={styles.errorText}>
-                    {error}
-                  </Text>
-                </View>
-              ) : null}
-
-              <AppButton
-                title="Save Todo"
-                onPress={handleSave}
-                loading={loading}
+          {/* ============ SECTION: TASK ============ */}
+          <SectionCard
+            icon={<Type size={14} color="#FFFFFF" strokeWidth={2.6} />}
+            accent={theme.colors.primary}
+            title="Task"
+            styles={styles}
+            theme={theme}>
+            {/* Title */}
+            <View style={styles.inputWrap}>
+              <TextInput
+                ref={titleInputRef}
+                style={[styles.titleInput, titleActive && styles.inputListening]}
+                placeholder="What needs to be done?"
+                placeholderTextColor={theme.colors.textLight}
+                value={title}
+                onChangeText={setTitle}
+                maxLength={100}
+                returnKeyType="next"
               />
-
-              <Pressable
-                style={styles.cancelButton}
-                onPress={() => navigation.goBack()}>
-                <Text style={styles.cancelText}>Cancel</Text>
-              </Pressable>
+              <View style={styles.micSlot}>
+                {renderMicButton('title', 40)}
+              </View>
             </View>
+
+            {/* Description */}
+            <View
+              style={[
+                styles.inputWrap,
+                styles.textAreaWrap,
+                descActive && styles.inputListening,
+              ]}>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="Add details or speak your notes..."
+                placeholderTextColor={theme.colors.textLight}
+                value={description}
+                onChangeText={setDescription}
+                multiline
+                textAlignVertical="top"
+                maxLength={500}
+              />
+              <View style={styles.micSlotTop}>
+                {renderMicButton('description', 40)}
+              </View>
+            </View>
+
+            {/* Language + Translate bar */}
+            <View style={styles.voiceBar}>
+              <View style={styles.langGroup}>
+                <Languages
+                  size={14}
+                  color={theme.colors.textSecondary}
+                  strokeWidth={2.4}
+                />
+                {['en-IN', 'hi-IN'].map(lang => {
+                  const selected = voiceLanguage === lang;
+                  return (
+                    <Pressable
+                      key={lang}
+                      style={[
+                        styles.langChip,
+                        selected && styles.langChipActive,
+                      ]}
+                      onPress={() => setVoiceLanguage(lang)}>
+                      <Text
+                        style={[
+                          styles.langChipText,
+                          selected && styles.langChipTextActive,
+                        ]}>
+                        {lang === 'en-IN' ? 'EN' : 'HI'}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <View style={styles.voiceBarRight}>
+                <Pressable
+                  style={styles.translateBtn}
+                  onPress={() => handleTranslate('title')}>
+                  <Sparkles
+                    size={13}
+                    color={theme.colors.primary}
+                    strokeWidth={2.4}
+                  />
+                  <Text style={styles.translateBtnText}>Translate</Text>
+                </Pressable>
+              </View>
+            </View>
+
+            {anyListening && (
+              <View style={styles.listeningStrip}>
+                <View style={styles.listeningDot} />
+                <Text style={styles.listeningText}>
+                  Listening… speak clearly
+                </Text>
+              </View>
+            )}
+          </SectionCard>
+
+          {/* ============ SECTION: ORGANIZATION ============ */}
+          <SectionCard
+            icon={<Tag size={14} color="#FFFFFF" strokeWidth={2.6} />}
+            accent="#8B5CF6"
+            title="Organization"
+            styles={styles}
+            theme={theme}>
+            {/* Priority segmented */}
+            <Text style={styles.miniLabel}>
+              <Flag
+                size={11}
+                color={theme.colors.textSecondary}
+                strokeWidth={2.6}
+              />
+              {'  '}Priority
+            </Text>
+            <View style={styles.segment}>
+              {PRIORITIES.map(item => {
+                const selected = priority === item.key;
+                return (
+                  <Pressable
+                    key={item.key}
+                    style={[
+                      styles.segmentItem,
+                      selected && {backgroundColor: item.color},
+                    ]}
+                    onPress={() => setPriority(item.key)}>
+                    <View
+                      style={[
+                        styles.priorityDot,
+                        {
+                          backgroundColor: selected ? '#FFFFFF' : item.color,
+                        },
+                      ]}
+                    />
+                    <Text
+                      style={[
+                        styles.segmentText,
+                        selected && styles.segmentTextSelected,
+                      ]}>
+                      {item.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {/* Category chips */}
+            <Text style={[styles.miniLabel, {marginTop: 16}]}>
+              <Tag
+                size={11}
+                color={theme.colors.textSecondary}
+                strokeWidth={2.6}
+              />
+              {'  '}Category
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoryScroll}>
+              {CATEGORIES.map(item => {
+                const selected = category === item.key;
+                return (
+                  <Pressable
+                    key={item.key}
+                    style={[
+                      styles.categoryChip,
+                      selected && {
+                        backgroundColor: theme.colors.primary,
+                        borderColor: theme.colors.primary,
+                      },
+                    ]}
+                    onPress={() => setCategory(item.key)}>
+                    <Text style={styles.categoryIcon}>{item.icon}</Text>
+                    <Text
+                      style={[
+                        styles.categoryText,
+                        selected && styles.categoryTextSelected,
+                      ]}>
+                      {item.key}
+                    </Text>
+                    {selected && (
+                      <Check
+                        size={12}
+                        color="#FFFFFF"
+                        strokeWidth={3}
+                        style={{marginLeft: 2}}
+                      />
+                    )}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            {/* Color */}
+            <Text style={[styles.miniLabel, {marginTop: 16}]}>
+              <Palette
+                size={11}
+                color={theme.colors.textSecondary}
+                strokeWidth={2.6}
+              />
+              {'  '}Color Tag
+            </Text>
+            <View style={styles.colorRow}>
+              {COLORS.map(c => {
+                const selected = color === c;
+                return (
+                  <Pressable
+                    key={c}
+                    style={[
+                      styles.colorOuter,
+                      selected && {borderColor: c},
+                    ]}
+                    onPress={() => setColor(c)}>
+                    <View
+                      style={[styles.colorInner, {backgroundColor: c}]}>
+                      {selected && (
+                        <Check size={14} color="#FFFFFF" strokeWidth={3.2} />
+                      )}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </SectionCard>
+
+          {/* ============ SECTION: SCHEDULE ============ */}
+          <SectionCard
+            icon={<CalendarIcon size={14} color="#FFFFFF" strokeWidth={2.6} />}
+            accent="#14B8A6"
+            title="Schedule"
+            styles={styles}
+            theme={theme}>
+            {/* Due date */}
+            <Pressable
+              style={[
+                styles.dateRow,
+                dueDate && {borderColor: theme.colors.primary + '55'},
+              ]}
+              onPress={toggleCalendar}>
+              <View style={styles.dateLeft}>
+                <View
+                  style={[
+                    styles.dateIconWrap,
+                    {
+                      backgroundColor: dueDate
+                        ? theme.colors.primary + '18'
+                        : theme.colors.background,
+                    },
+                  ]}>
+                  <CalendarIcon
+                    size={16}
+                    color={
+                      dueDate
+                        ? theme.colors.primary
+                        : theme.colors.textSecondary
+                    }
+                    strokeWidth={2.4}
+                  />
+                </View>
+                <View style={{flex: 1}}>
+                  <Text style={styles.dateLabel}>Due date</Text>
+                  <Text
+                    style={[
+                      styles.dateValue,
+                      !dueDate && {color: theme.colors.textLight},
+                    ]}
+                    numberOfLines={1}>
+                    {dueDate
+                      ? formatDate(new Date(`${dueDate}T12:00:00`))
+                      : 'No date selected'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.dateRight}>
+                {dueDate && (
+                  <Pressable
+                    onPress={() => setDueDate(null)}
+                    hitSlop={10}
+                    style={styles.clearIconBtn}>
+                    <X
+                      size={14}
+                      color={theme.colors.textSecondary}
+                      strokeWidth={2.6}
+                    />
+                  </Pressable>
+                )}
+                <ChevronRight
+                  size={18}
+                  color={theme.colors.textSecondary}
+                  strokeWidth={2.4}
+                  style={{
+                    transform: [{rotate: showCalendar ? '90deg' : '0deg'}],
+                  }}
+                />
+              </View>
+            </Pressable>
+
+            {showCalendar && renderCalendar()}
+
+            {/* Reminder — simple toggle, no time */}
+            <View style={styles.reminderCard}>
+              <View style={styles.reminderLeft}>
+                <View
+                  style={[
+                    styles.dateIconWrap,
+                    {
+                      backgroundColor: reminder
+                        ? theme.colors.primary + '18'
+                        : theme.colors.background,
+                    },
+                  ]}>
+                  <Bell
+                    size={16}
+                    color={
+                      reminder
+                        ? theme.colors.primary
+                        : theme.colors.textSecondary
+                    }
+                    strokeWidth={2.4}
+                  />
+                </View>
+                <View style={{flex: 1}}>
+                  <Text style={styles.reminderTitle}>Reminder</Text>
+                  <Text style={styles.reminderDesc} numberOfLines={1}>
+                    Get notified about this task
+                  </Text>
+                </View>
+              </View>
+
+              <Switch
+                value={reminder}
+                onValueChange={val => {
+                  LayoutAnimation.configureNext(
+                    LayoutAnimation.Presets.easeInEaseOut,
+                  );
+                  setReminder(val);
+                }}
+                trackColor={{
+                  false: theme.colors.border,
+                  true: theme.colors.primary,
+                }}
+                thumbColor="#FFFFFF"
+                ios_backgroundColor={theme.colors.border}
+              />
+            </View>
+          </SectionCard>
+
+          {/* ERROR */}
+          {error ? (
+            <Animated.View
+              style={[
+                styles.errorBox,
+                {
+                  opacity: errorAnim,
+                  transform: [
+                    {
+                      translateY: errorAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [-6, 0],
+                      }),
+                    },
+                  ],
+                },
+              ]}>
+              <Text style={styles.errorText}>{error}</Text>
+            </Animated.View>
+          ) : null}
+
+          {/* ACTIONS */}
+          <View style={styles.actions}>
+            <Pressable
+              style={[
+                styles.primaryBtn,
+                {backgroundColor: theme.colors.primary},
+                loading && {opacity: 0.6},
+              ]}
+              onPress={() => handleSave(false)}
+              disabled={loading}>
+              <Check size={18} color="#FFFFFF" strokeWidth={2.8} />
+              <Text style={styles.primaryBtnText}>Save Task</Text>
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.secondaryBtn,
+                {
+                  borderColor: theme.colors.primary,
+                  backgroundColor: theme.colors.primary + '10',
+                },
+                loading && {opacity: 0.6},
+              ]}
+              onPress={() => handleSave(true)}
+              disabled={loading}>
+              <Play
+                size={16}
+                color={theme.colors.primary}
+                strokeWidth={2.6}
+                fill={theme.colors.primary}
+              />
+              <Text
+                style={[
+                  styles.secondaryBtnText,
+                  {color: theme.colors.primary},
+                ]}>
+                Save & Start
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.cancelBtn}
+              onPress={() => navigation.goBack()}>
+              <Text style={styles.cancelText}>Cancel</Text>
+            </Pressable>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -321,228 +959,587 @@ function AddTodoScreen({navigation}) {
   );
 }
 
+/* --------------------------- SUB-COMPONENTS ---------------------------- */
+
+function SectionCard({icon, accent, title, children, styles, theme}) {
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <View style={[styles.cardIconWrap, {backgroundColor: accent}]}>
+          {icon}
+        </View>
+        <Text style={styles.cardTitle}>{title}</Text>
+      </View>
+      <View style={styles.cardBody}>{children}</View>
+    </View>
+  );
+}
+
+function QuickChip({label, onPress, styles, theme}) {
+  return (
+    <Pressable
+      style={[
+        styles.quickChip,
+        {
+          backgroundColor: theme.colors.background,
+          borderColor: theme.colors.border,
+        },
+      ]}
+      onPress={onPress}>
+      <Text style={[styles.quickChipText, {color: theme.colors.text}]}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/* ------------------------------- STYLES -------------------------------- */
+
 function createStyles(theme) {
   return StyleSheet.create({
     safeArea: {
       flex: 1,
       backgroundColor: theme.colors.background,
     },
-
-    keyboard: {
-      flex: 1,
-    },
-
+    keyboard: {flex: 1},
     scrollContent: {
-      flexGrow: 1,
+      paddingBottom: 40,
     },
 
-    container: {
-      paddingHorizontal: theme.spacing.xl,
-      paddingVertical: theme.spacing.lg,
-    },
-
+    /* Header */
     header: {
       flexDirection: 'row',
       alignItems: 'center',
-      marginBottom: theme.spacing.xxl,
+      paddingHorizontal: 20,
+      paddingTop: 10,
+      paddingBottom: 20,
     },
-
     backButton: {
-      width: 44,
-      height: 44,
+      width: 42,
+      height: 42,
+      borderRadius: 14,
+      backgroundColor: theme.colors.surface,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
       alignItems: 'center',
       justifyContent: 'center',
-      marginRight: theme.spacing.sm,
+      marginRight: 14,
     },
-
-    backText: {
-      fontSize: 38,
-      lineHeight: 38,
-      color: theme.colors.text,
-    },
-
-    headerTextContainer: {
-      flex: 1,
-    },
-
+    headerTextContainer: {flex: 1},
     headerTitle: {
-      fontSize: theme.typography.heading,
+      fontSize: 24,
       fontWeight: '800',
       color: theme.colors.text,
+      letterSpacing: -0.6,
     },
-
     headerSubtitle: {
-      marginTop: 4,
-      fontSize: theme.typography.bodySmall,
+      marginTop: 2,
+      fontSize: 13,
       color: theme.colors.textSecondary,
+      fontWeight: '500',
     },
 
-    form: {
-      width: '100%',
-    },
-
-    field: {
-      marginBottom: theme.spacing.xl,
-    },
-
-    label: {
-      marginBottom: theme.spacing.sm,
-      fontSize: theme.typography.bodySmall,
-      fontWeight: '700',
-      color: theme.colors.text,
-    },
-
-    input: {
-      minHeight: 52,
+    /* Card */
+    card: {
+      marginHorizontal: 16,
+      marginBottom: 14,
+      backgroundColor: theme.colors.surface,
+      borderRadius: 22,
       borderWidth: 1,
       borderColor: theme.colors.border,
-      borderRadius: theme.radius.lg,
-      paddingHorizontal: theme.spacing.lg,
-      fontSize: theme.typography.body,
-      color: theme.colors.text,
-      backgroundColor: theme.colors.surface,
+      padding: 16,
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 4},
+      shadowOpacity: 0.05,
+      shadowRadius: 12,
+      elevation: 2,
     },
-
-    textArea: {
-      minHeight: 130,
-      paddingTop: theme.spacing.lg,
-    },
-
-    helper: {
-      marginTop: theme.spacing.xs,
-      textAlign: 'right',
-      fontSize: theme.typography.caption,
-      color: theme.colors.textLight,
-    },
-
-    optionsRow: {
+    cardHeader: {
       flexDirection: 'row',
-      gap: theme.spacing.sm,
+      alignItems: 'center',
+      marginBottom: 14,
     },
-
-    option: {
-      flex: 1,
-      minHeight: 46,
+    cardIconWrap: {
+      width: 26,
+      height: 26,
+      borderRadius: 9,
       alignItems: 'center',
       justifyContent: 'center',
-      borderWidth: 1,
+      marginRight: 10,
+    },
+    cardTitle: {
+      fontSize: 13,
+      fontWeight: '800',
+      color: theme.colors.text,
+      letterSpacing: 1,
+      textTransform: 'uppercase',
+    },
+    cardBody: {},
+
+    /* Inputs */
+    inputWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.colors.background,
+      borderWidth: 1.5,
       borderColor: theme.colors.border,
-      borderRadius: theme.radius.md,
-      backgroundColor: theme.colors.surface,
+      borderRadius: 16,
+      paddingLeft: 14,
+      paddingRight: 6,
+      minHeight: 54,
+      marginBottom: 12,
     },
-
-    selectedOption: {
+    textAreaWrap: {
+      alignItems: 'flex-start',
+      minHeight: 130,
+      paddingTop: 4,
+      paddingBottom: 8,
+      paddingRight: 8,
+    },
+    inputListening: {
       borderColor: theme.colors.primary,
-      backgroundColor: theme.colors.primary,
+      shadowColor: theme.colors.primary,
+      shadowOpacity: 0.15,
+      shadowRadius: 8,
+      shadowOffset: {width: 0, height: 0},
+      elevation: 3,
     },
-
-    optionText: {
-      fontSize: theme.typography.bodySmall,
+    titleInput: {
+      flex: 1,
+      paddingVertical: 14,
+      fontSize: 17,
       fontWeight: '600',
-      color: theme.colors.textSecondary,
-      textTransform: 'capitalize',
+      color: theme.colors.text,
+    },
+    input: {
+      flex: 1,
+      paddingVertical: 14,
+      fontSize: 15,
+      fontWeight: '500',
+      color: theme.colors.text,
+    },
+    textArea: {
+      minHeight: 108,
+      textAlignVertical: 'top',
+      paddingTop: 12,
+      paddingLeft: 0,
+    },
+    micSlot: {
+      marginLeft: 6,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    micSlotTop: {
+      marginTop: 6,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
 
-    selectedOptionText: {
-      color: theme.colors.white,
-      fontWeight: '700',
+    /* Mic button */
+    micButton: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.primary,
+      shadowColor: theme.colors.primary,
+      shadowOffset: {width: 0, height: 3},
+      shadowOpacity: 0.35,
+      shadowRadius: 6,
+      elevation: 4,
+      zIndex: 2,
+    },
+    micButtonActive: {
+      backgroundColor: '#DC2626',
+      shadowColor: '#DC2626',
+    },
+    micPulse: {
+      position: 'absolute',
+      backgroundColor: '#DC2626',
     },
 
-    select: {
-      minHeight: 52,
+    /* Voice bar */
+    voiceBar: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
+      marginTop: 4,
+    },
+    langGroup: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    langChip: {
+      paddingHorizontal: 12,
+      paddingVertical: 5,
+      borderRadius: 12,
+      backgroundColor: theme.colors.background,
       borderWidth: 1,
       borderColor: theme.colors.border,
-      borderRadius: theme.radius.lg,
-      paddingHorizontal: theme.spacing.lg,
-      backgroundColor: theme.colors.surface,
+      marginLeft: 6,
     },
-
-    selectText: {
-      fontSize: theme.typography.body,
-      color: theme.colors.text,
+    langChipActive: {
+      backgroundColor: theme.colors.primary,
+      borderColor: theme.colors.primary,
     },
-
-    selectArrow: {
-      fontSize: 20,
+    langChipText: {
+      fontSize: 11,
+      fontWeight: '800',
+      letterSpacing: 0.5,
       color: theme.colors.textSecondary,
     },
-
-    dropdown: {
-      marginTop: theme.spacing.sm,
-      overflow: 'hidden',
+    langChipTextActive: {color: '#FFFFFF'},
+    voiceBarRight: {},
+    translateBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 12,
+      backgroundColor: theme.colors.primary + '14',
       borderWidth: 1,
-      borderColor: theme.colors.border,
-      borderRadius: theme.radius.lg,
-      backgroundColor: theme.colors.surface,
+      borderColor: theme.colors.primary + '40',
     },
-
-    dropdownItem: {
-      minHeight: 48,
-      justifyContent: 'center',
-      paddingHorizontal: theme.spacing.lg,
-      borderBottomWidth: 1,
-      borderBottomColor: theme.colors.border,
-    },
-
-    selectedDropdownItem: {
-      backgroundColor: theme.colors.background,
-    },
-
-    dropdownText: {
-      fontSize: theme.typography.bodySmall,
-      color: theme.colors.text,
-    },
-
-    selectedDropdownText: {
+    translateBtnText: {
+      fontSize: 12,
       fontWeight: '700',
       color: theme.colors.primary,
     },
 
-    reminderRow: {
+    /* Listening strip */
+    listeningStrip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginTop: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 12,
+      backgroundColor: theme.colors.primary + '12',
+    },
+    listeningDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: '#DC2626',
+    },
+    listeningText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: theme.colors.primary,
+    },
+
+    /* Mini labels inside cards */
+    miniLabel: {
+      fontSize: 11,
+      fontWeight: '800',
+      color: theme.colors.textSecondary,
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
+      marginBottom: 10,
+    },
+
+    /* Priority segmented */
+    segment: {
+      flexDirection: 'row',
+      backgroundColor: theme.colors.background,
+      borderRadius: 14,
+      padding: 4,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    segmentItem: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 10,
+      borderRadius: 11,
+      gap: 6,
+    },
+    priorityDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+    },
+    segmentText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: theme.colors.textSecondary,
+    },
+    segmentTextSelected: {color: '#FFFFFF'},
+
+    /* Category */
+    categoryScroll: {
+      gap: 8,
+      paddingRight: 8,
+    },
+    categoryChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 12,
+      backgroundColor: theme.colors.background,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    categoryIcon: {fontSize: 14},
+    categoryText: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: theme.colors.textSecondary,
+    },
+    categoryTextSelected: {
+      color: '#FFFFFF',
+      fontWeight: '700',
+    },
+
+    /* Colors */
+    colorRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 10,
+    },
+    colorOuter: {
+      width: 44,
+      height: 44,
+      borderRadius: 14,
+      borderWidth: 2,
+      borderColor: 'transparent',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    colorInner: {
+      width: 34,
+      height: 34,
+      borderRadius: 11,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+
+    /* Date row */
+    dateRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingVertical: theme.spacing.md,
-      marginBottom: theme.spacing.xl,
-      borderTopWidth: 1,
-      borderBottomWidth: 1,
+      padding: 12,
+      borderRadius: 16,
+      borderWidth: 1.5,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.background,
+    },
+    dateLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+      gap: 12,
+    },
+    dateIconWrap: {
+      width: 36,
+      height: 36,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    dateLabel: {
+      fontSize: 11,
+      fontWeight: '800',
+      color: theme.colors.textSecondary,
+      letterSpacing: 0.6,
+      textTransform: 'uppercase',
+      marginBottom: 2,
+    },
+    dateValue: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: theme.colors.text,
+    },
+    dateRight: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    clearIconBtn: {
+      width: 26,
+      height: 26,
+      borderRadius: 9,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.surface,
+    },
+
+    /* Reminder */
+    reminderCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: 12,
+      marginTop: 12,
+      borderRadius: 16,
+      backgroundColor: theme.colors.background,
+      borderWidth: 1.5,
       borderColor: theme.colors.border,
     },
-
-    reminderTextContainer: {
+    reminderLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
       flex: 1,
+      gap: 12,
+      marginRight: 8,
     },
-
-    reminderDescription: {
-      marginTop: -theme.spacing.xs,
-      fontSize: theme.typography.caption,
+    reminderTitle: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: theme.colors.text,
+    },
+    reminderDesc: {
+      marginTop: 2,
+      fontSize: 12,
       color: theme.colors.textSecondary,
+      fontWeight: '500',
     },
 
+    /* Calendar */
+    calendar: {
+      marginTop: 12,
+      padding: 12,
+      borderRadius: 16,
+      backgroundColor: theme.colors.background,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    calendarHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 10,
+    },
+    monthArrow: {
+      width: 34,
+      height: 34,
+      borderRadius: 11,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.surface,
+    },
+    monthTitle: {
+      fontSize: 15,
+      fontWeight: '800',
+      color: theme.colors.text,
+    },
+    calendarGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+    },
+    calendarCell: {
+      width: `${100 / 7}%`,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    weekdayText: {
+      fontSize: 11,
+      fontWeight: '800',
+      color: theme.colors.textLight,
+    },
+    dayCircle: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1.5,
+      borderColor: 'transparent',
+    },
+    dayText: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: theme.colors.text,
+    },
+    selectedDayText: {
+      color: '#FFFFFF',
+      fontWeight: '800',
+    },
+    quickRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginTop: 12,
+    },
+    quickChip: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 12,
+      borderWidth: 1,
+    },
+    quickChipText: {
+      fontSize: 12,
+      fontWeight: '700',
+    },
+
+    /* Error */
     errorBox: {
-      marginBottom: theme.spacing.lg,
-      padding: theme.spacing.md,
-      borderRadius: theme.radius.md,
+      marginHorizontal: 16,
+      marginBottom: 12,
+      padding: 14,
+      borderRadius: 14,
       backgroundColor: '#FEE2E2',
+      borderWidth: 1,
+      borderColor: '#FCA5A5',
     },
-
     errorText: {
-      fontSize: theme.typography.bodySmall,
-      lineHeight: 20,
+      fontSize: 13,
+      fontWeight: '700',
       color: theme.colors.danger,
     },
 
-    cancelButton: {
+    /* Actions */
+    actions: {
+      paddingHorizontal: 16,
+      marginTop: 6,
+      gap: 10,
+    },
+    primaryBtn: {
+      flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      paddingVertical: theme.spacing.lg,
+      gap: 8,
+      paddingVertical: 16,
+      borderRadius: 16,
+      shadowColor: theme.colors.primary,
+      shadowOffset: {width: 0, height: 6},
+      shadowOpacity: 0.3,
+      shadowRadius: 12,
+      elevation: 6,
     },
-
+    primaryBtnText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '800',
+      letterSpacing: 0.2,
+    },
+    secondaryBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      paddingVertical: 14,
+      borderRadius: 16,
+      borderWidth: 1.5,
+    },
+    secondaryBtnText: {
+      fontSize: 15,
+      fontWeight: '800',
+    },
+    cancelBtn: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 14,
+    },
     cancelText: {
-      fontSize: theme.typography.bodySmall,
+      fontSize: 14,
       fontWeight: '700',
       color: theme.colors.textSecondary,
     },

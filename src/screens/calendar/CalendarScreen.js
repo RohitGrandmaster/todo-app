@@ -1,3 +1,4 @@
+import React, {useMemo, useState} from 'react';
 import {
   View,
   Text,
@@ -5,194 +6,520 @@ import {
   StyleSheet,
   ScrollView,
 } from 'react-native';
-
+import {SafeAreaView} from 'react-native-safe-area-context';
+import {useNavigation} from '@react-navigation/native';
 import {
-  SafeAreaView,
-} from 'react-native-safe-area-context';
-
-import {useMemo, useState} from 'react';
+  ChevronLeft,
+  ChevronRight,
+  Calendar as CalendarIcon,
+  CalendarX,
+  Plus,
+  Check,
+} from 'lucide-react-native';
 
 import useTodos from '../../hooks/useTodos';
 import useTheme from '../../hooks/useTheme';
+import ROUTES from '../../constants/routes';
+
+/* --------------------------- CONSTANTS --------------------------- */
+
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+const WEEKDAYS_SHORT = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const WEEKDAYS_FULL = [
+  'Sunday', 'Monday', 'Tuesday', 'Wednesday',
+  'Thursday', 'Friday', 'Saturday',
+];
+
+const PRIORITY_COLORS = {
+  low: '#10B981',
+  medium: '#F59E0B',
+  high: '#EF4444',
+};
+
+const PRIORITY_RANK = {high: 3, medium: 2, low: 1};
+
+/* --------------------------- HELPERS --------------------------- */
+
+const pad = v => String(v).padStart(2, '0');
+
+const dateKey = d =>
+  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+function getTaskDayKey(task) {
+  if (!task?.dueDate) return null;
+  const dd = String(task.dueDate).trim();
+  if (!dd) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dd)) return dd;
+
+  const now = new Date();
+  const lower = dd.toLowerCase();
+
+  if (lower === 'today') return dateKey(now);
+
+  if (lower === 'tomorrow') {
+    const t = new Date(now);
+    t.setDate(t.getDate() + 1);
+    return dateKey(t);
+  }
+
+  if (lower === 'next week' || lower === 'nextweek') {
+    const t = new Date(now);
+    t.setDate(t.getDate() + 7);
+    return dateKey(t);
+  }
+
+  const parsed = new Date(dd);
+  if (!isNaN(parsed.getTime())) return dateKey(parsed);
+
+  return null;
+}
+
+/* --------------------------- SCREEN --------------------------- */
 
 function CalendarScreen() {
   const {theme} = useTheme();
   const {tasks} = useTodos();
+  const navigation = useNavigation();
 
-  const styles = createStyles(theme);
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
-  const [selectedDay, setSelectedDay] =
-    useState(8);
+  const today = new Date();
+  const todayKey = dateKey(today);
 
-  const days = useMemo(
-    () => [
-      {day: 1, label: 'Thu'},
-      {day: 2, label: 'Fri'},
-      {day: 3, label: 'Sat'},
-      {day: 4, label: 'Sun'},
-      {day: 5, label: 'Mon'},
-      {day: 6, label: 'Tue'},
-      {day: 7, label: 'Wed'},
-      {day: 8, label: 'Thu'},
-      {day: 9, label: 'Fri'},
-      {day: 10, label: 'Sat'},
-      {day: 11, label: 'Sun'},
-      {day: 12, label: 'Mon'},
-      {day: 13, label: 'Tue'},
-      {day: 14, label: 'Wed'},
-    ],
-    [],
+  const [viewMonth, setViewMonth] = useState(
+    new Date(today.getFullYear(), today.getMonth(), 1),
   );
+  const [selectedKey, setSelectedKey] = useState(todayKey);
 
-  const selectedTasks = tasks.filter(
-    task => {
-      if (selectedDay === 8) {
-        return task.dueDate === 'Today';
-      }
+  const tasksByDay = useMemo(() => {
+    const map = {};
+    (tasks || [])
+      .filter(t => !t.deleted)
+      .forEach(t => {
+        const key = getTaskDayKey(t);
+        if (!key) return;
+        if (!map[key]) map[key] = [];
+        map[key].push(t);
+      });
+    return map;
+  }, [tasks]);
 
-      if (selectedDay === 9) {
-        return task.dueDate === 'Tomorrow';
-      }
+  const grid = useMemo(() => {
+    const year = viewMonth.getFullYear();
+    const month = viewMonth.getMonth();
+    const firstWeekday = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-      if (selectedDay >= 14) {
-        return task.dueDate === 'Next week';
-      }
+    const cells = [
+      ...Array(firstWeekday).fill(null),
+      ...Array.from(
+        {length: daysInMonth},
+        (_, i) => new Date(year, month, i + 1),
+      ),
+    ];
+    while (cells.length % 7 !== 0) cells.push(null);
+    return cells;
+  }, [viewMonth]);
 
-      return false;
-    },
-  );
+  const selectedDate = useMemo(() => {
+    const [y, m, d] = selectedKey.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }, [selectedKey]);
 
+  const selectedTasks = tasksByDay[selectedKey] || [];
+
+  const sortedSelectedTasks = useMemo(() => {
+    return [...selectedTasks].sort((a, b) => {
+      if (!!a.completed !== !!b.completed) return a.completed ? 1 : -1;
+      return (
+        (PRIORITY_RANK[b.priority] || 0) -
+        (PRIORITY_RANK[a.priority] || 0)
+      );
+    });
+  }, [selectedTasks]);
+
+  const isSelectedToday = selectedKey === todayKey;
+
+  const selectedDateLabel = useMemo(() => {
+    if (isSelectedToday) return 'Today';
+
+    const tmr = new Date(today);
+    tmr.setDate(tmr.getDate() + 1);
+    if (dateKey(tmr) === selectedKey) return 'Tomorrow';
+
+    const y = selectedDate.getFullYear();
+    const short =
+      `${WEEKDAYS_FULL[selectedDate.getDay()]}, ` +
+      `${MONTHS[selectedDate.getMonth()].slice(0, 3)} ` +
+      `${selectedDate.getDate()}`;
+
+    return y === today.getFullYear() ? short : `${short}, ${y}`;
+  }, [selectedDate, selectedKey, isSelectedToday, today]);
+
+  const monthTaskCount = useMemo(() => {
+    const y = viewMonth.getFullYear();
+    const m = viewMonth.getMonth();
+    const prefix = `${y}-${pad(m + 1)}`;
+    return Object.keys(tasksByDay)
+      .filter(k => k.startsWith(prefix))
+      .reduce((sum, k) => sum + tasksByDay[k].length, 0);
+  }, [tasksByDay, viewMonth]);
+
+  function goPrevMonth() {
+    setViewMonth(
+      prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1),
+    );
+  }
+  function goNextMonth() {
+    setViewMonth(
+      prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1),
+    );
+  }
+  function goToday() {
+    setViewMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+    setSelectedKey(todayKey);
+  }
+
+  function openAddTask() {
+    navigation.navigate(ROUTES.ADD_TODO, {presetDueDate: selectedKey});
+  }
+  function openTask(taskId) {
+    navigation.navigate(ROUTES.TODO_DETAIL, {todoId: taskId});
+  }
+
+  /* --------------------------- RENDER --------------------------- */
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}>
         <View style={styles.container}>
-          <Text style={styles.title}>
-            Calendar
-          </Text>
-
-          <Text style={styles.subtitle}>
-            Plan your tasks and stay ahead.
-          </Text>
-
-          <View style={styles.monthHeader}>
-            <Pressable
-              style={styles.arrowButton}>
-              <Text style={styles.arrow}>
-                ‹
-              </Text>
-            </Pressable>
-
-            <Text
-              style={styles.monthTitle}>
-              October 2026
-            </Text>
-
-            <Pressable
-              style={styles.arrowButton}>
-              <Text style={styles.arrow}>
-                ›
-              </Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.weekHeader}>
-            {days.slice(0, 7).map(item => (
-              <Text
-                key={item.day}
-                style={styles.weekLabel}>
-                {item.label.slice(0, 1)}
-              </Text>
-            ))}
-          </View>
-
-          <View style={styles.daysGrid}>
-            {days.map(item => {
-              const selected =
-                selectedDay === item.day;
-
-              return (
-                <Pressable
-                  key={item.day}
-                  style={[
-                    styles.day,
-                    selected &&
-                      styles.selectedDay,
-                  ]}
-                  onPress={() =>
-                    setSelectedDay(item.day)
-                  }>
-                  <Text
-                    style={[
-                      styles.dayText,
-                      selected &&
-                        styles.selectedDayText,
-                    ]}>
-                    {item.day}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <View style={styles.selectedHeader}>
-            <Text
-              style={styles.selectedTitle}>
-              {selectedDay === 8
-                ? 'Today'
-                : `October ${selectedDay}`}
-            </Text>
-
-            <Text
-              style={styles.taskCount}>
-              {selectedTasks.length}{' '}
-              tasks
-            </Text>
-          </View>
-
-          {selectedTasks.length === 0 ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyIcon}>
-                ✓
-              </Text>
-
-              <Text
-                style={styles.emptyTitle}>
-                No tasks for this day
-              </Text>
-
-              <Text
-                style={styles.emptyText}>
-                Your schedule is clear.
+          {/* ============ HEADER ============ */}
+          <View style={styles.header}>
+            <View style={{flex: 1}}>
+              <Text style={styles.title}>Calendar</Text>
+              <Text style={styles.subtitle}>
+                Plan ahead. Stay on track.
               </Text>
             </View>
-          ) : (
-            selectedTasks.map(task => (
-              <View
-                key={task.id}
-                style={styles.taskCard}>
-                <View
-                  style={styles.taskIndicator}
-                />
 
-                <View
-                  style={styles.taskContent}>
-                  <Text
-                    style={styles.taskTitle}>
-                    {task.title}
-                  </Text>
+            <Pressable
+              style={styles.todayBtn}
+              onPress={goToday}
+              hitSlop={6}
+              accessibilityLabel="Jump to today">
+              <CalendarIcon
+                size={13}
+                color={theme.colors.primary}
+                strokeWidth={2.6}
+              />
+              <Text style={styles.todayBtnText}>Today</Text>
+            </Pressable>
+          </View>
 
-                  <Text
-                    style={
-                      styles.taskDescription
-                    }>
-                    {task.category} •{' '}
-                    {task.priority}
-                  </Text>
-                </View>
+          {/* ============ MONTH NAV CARD ============ */}
+          <View style={styles.monthCard}>
+            <Pressable
+              style={styles.arrowBtn}
+              onPress={goPrevMonth}
+              hitSlop={6}
+              accessibilityLabel="Previous month">
+              <ChevronLeft
+                size={20}
+                color={theme.colors.text}
+                strokeWidth={2.6}
+              />
+            </Pressable>
+
+            <View style={styles.monthCenter}>
+              <Text style={styles.monthTitle}>
+                {MONTHS[viewMonth.getMonth()]}
+              </Text>
+              <View style={styles.monthSubRow}>
+                <Text style={styles.monthYear}>
+                  {viewMonth.getFullYear()}
+                </Text>
+                {monthTaskCount > 0 && (
+                  <>
+                    <View style={styles.monthDot} />
+                    <Text style={styles.monthTaskCount}>
+                      {monthTaskCount}{' '}
+                      {monthTaskCount === 1 ? 'task' : 'tasks'}
+                    </Text>
+                  </>
+                )}
               </View>
-            ))
+            </View>
+
+            <Pressable
+              style={styles.arrowBtn}
+              onPress={goNextMonth}
+              hitSlop={6}
+              accessibilityLabel="Next month">
+              <ChevronRight
+                size={20}
+                color={theme.colors.text}
+                strokeWidth={2.6}
+              />
+            </Pressable>
+          </View>
+
+          {/* ============ CALENDAR BODY ============ */}
+          <View style={styles.calendarCard}>
+            {/* Weekday header */}
+            <View style={styles.weekRow}>
+              {WEEKDAYS_SHORT.map((d, i) => (
+                <View key={i} style={styles.weekCell}>
+                  <Text style={styles.weekLabel}>{d}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Grid */}
+            <View style={styles.grid}>
+              {grid.map((date, index) => {
+                if (!date) {
+                  return (
+                    <View key={`e-${index}`} style={styles.dayCell} />
+                  );
+                }
+
+                const key = dateKey(date);
+                const selected = key === selectedKey;
+                const isToday = key === todayKey;
+                const dayTasks = tasksByDay[key] || [];
+                const pendingCount = dayTasks.filter(
+                  t => !t.completed,
+                ).length;
+                const hasPending = pendingCount > 0;
+                const allDone =
+                  dayTasks.length > 0 && pendingCount === 0;
+
+                return (
+                  <Pressable
+                    key={key}
+                    style={styles.dayCell}
+                    onPress={() => setSelectedKey(key)}
+                    accessibilityLabel={`Select ${key}`}>
+                    <View
+                      style={[
+                        styles.dayCircle,
+                        isToday && !selected && styles.todayRing,
+                        selected && styles.selectedDayCircle,
+                      ]}>
+                      <Text
+                        style={[
+                          styles.dayText,
+                          isToday && !selected && styles.todayText,
+                          selected && styles.selectedDayText,
+                        ]}>
+                        {date.getDate()}
+                      </Text>
+                    </View>
+
+                    <View style={styles.dotRow}>
+                      {allDone ? (
+                        <View
+                          style={[
+                            styles.dot,
+                            {
+                              backgroundColor: selected
+                                ? '#FFFFFF'
+                                : theme.colors.success || '#10B981',
+                            },
+                          ]}
+                        />
+                      ) : hasPending ? (
+                        Array.from({
+                          length: Math.min(pendingCount, 3),
+                        }).map((_, i) => (
+                          <View
+                            key={i}
+                            style={[
+                              styles.dot,
+                              {
+                                backgroundColor: selected
+                                  ? '#FFFFFF'
+                                  : theme.colors.primary,
+                              },
+                            ]}
+                          />
+                        ))
+                      ) : null}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* ============ SELECTED HEADER ============ */}
+          <View style={styles.selectedHeader}>
+            <View style={{flex: 1}}>
+              <Text style={styles.selectedLabel}>SELECTED</Text>
+              <Text style={styles.selectedTitle} numberOfLines={1}>
+                {selectedDateLabel}
+              </Text>
+            </View>
+
+            <View
+              style={[
+                styles.countBadge,
+                {
+                  backgroundColor: theme.colors.primary + '18',
+                  borderColor: theme.colors.primary + '35',
+                },
+              ]}>
+              <Text
+                style={[
+                  styles.countBadgeNum,
+                  {color: theme.colors.primary},
+                ]}>
+                {selectedTasks.length}
+              </Text>
+              <Text
+                style={[
+                  styles.countBadgeLabel,
+                  {color: theme.colors.primary},
+                ]}>
+                {selectedTasks.length === 1 ? 'task' : 'tasks'}
+              </Text>
+            </View>
+          </View>
+
+          {/* ============ TASK LIST / EMPTY ============ */}
+          {selectedTasks.length === 0 ? (
+            <View style={styles.empty}>
+              <View style={styles.emptyIconWrap}>
+                <CalendarX
+                  size={30}
+                  color={theme.colors.textLight}
+                  strokeWidth={1.8}
+                />
+              </View>
+              <Text style={styles.emptyTitle}>No tasks for this day</Text>
+              <Text style={styles.emptyText}>
+                Your schedule is clear. Enjoy the free time.
+              </Text>
+
+              <Pressable
+                style={[
+                  styles.addBtn,
+                  {
+                    backgroundColor: theme.colors.primary,
+                    shadowColor: theme.colors.primary,
+                  },
+                ]}
+                onPress={openAddTask}>
+                <Plus size={15} color="#FFFFFF" strokeWidth={2.8} />
+                <Text style={styles.addBtnText}>Add task</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <>
+              {sortedSelectedTasks.map(task => {
+                const priorityColor =
+                  PRIORITY_COLORS[task.priority] || theme.colors.primary;
+                const completed = !!task.completed;
+
+                return (
+                  <Pressable
+                    key={task.id}
+                    style={({pressed}) => [
+                      styles.taskCard,
+                      completed && styles.taskCardDone,
+                      {opacity: pressed ? 0.85 : 1},
+                    ]}
+                    onPress={() => openTask(task.id)}>
+                    <View
+                      style={[
+                        styles.taskIndicator,
+                        {backgroundColor: priorityColor},
+                      ]}
+                    />
+
+                    <View style={styles.taskContent}>
+                      <Text
+                        style={[
+                          styles.taskTitle,
+                          completed && styles.taskTitleDone,
+                        ]}
+                        numberOfLines={1}>
+                        {task.title}
+                      </Text>
+
+                      <View style={styles.taskMetaRow}>
+                        {task.category ? (
+                          <Text
+                            style={styles.taskMeta}
+                            numberOfLines={1}>
+                            {task.category}
+                          </Text>
+                        ) : null}
+
+                        {task.category && task.priority ? (
+                          <Text style={styles.taskMetaDot}>•</Text>
+                        ) : null}
+
+                        {task.priority ? (
+                          <Text
+                            style={[
+                              styles.taskMeta,
+                              {
+                                color: priorityColor,
+                                textTransform: 'capitalize',
+                              },
+                            ]}>
+                            {task.priority}
+                          </Text>
+                        ) : null}
+                      </View>
+                    </View>
+
+                    {completed && (
+                      <View
+                        style={[
+                          styles.doneTick,
+                          {
+                            backgroundColor:
+                              theme.colors.success || '#10B981',
+                          },
+                        ]}>
+                        <Check size={11} color="#FFFFFF" strokeWidth={3} />
+                      </View>
+                    )}
+                  </Pressable>
+                );
+              })}
+
+              <Pressable
+                style={[
+                  styles.inlineAddBtn,
+                  {
+                    borderColor: theme.colors.primary + '40',
+                    backgroundColor: theme.colors.primary + '0D',
+                  },
+                ]}
+                onPress={openAddTask}>
+                <Plus
+                  size={14}
+                  color={theme.colors.primary}
+                  strokeWidth={2.8}
+                />
+                <Text
+                  style={[
+                    styles.inlineAddText,
+                    {color: theme.colors.primary},
+                  ]}>
+                  Add task on this day
+                </Text>
+              </Pressable>
+            </>
           )}
         </View>
       </ScrollView>
@@ -200,212 +527,395 @@ function CalendarScreen() {
   );
 }
 
+/* --------------------------- STYLES --------------------------- */
+
 function createStyles(theme) {
   return StyleSheet.create({
     safeArea: {
       flex: 1,
-      backgroundColor:
-        theme.colors.background,
+      backgroundColor: theme.colors.background,
     },
-
     scrollContent: {
       flexGrow: 1,
+      paddingBottom: 120,
     },
-
     container: {
-      padding: theme.spacing.xl,
+      paddingHorizontal: theme.spacing.xl,
+      paddingTop: theme.spacing.md || 12,
     },
 
+    /* ============ HEADER ============ */
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: theme.spacing.lg,
+    },
     title: {
-      fontSize: 30,
-      fontWeight: '800',
+      fontSize: 26,
+      fontWeight: '900',
       color: theme.colors.text,
+      letterSpacing: -0.6,
     },
-
     subtitle: {
-      marginTop: theme.spacing.sm,
-      fontSize:
-        theme.typography.bodySmall,
-      lineHeight: 20,
+      marginTop: 2,
+      fontSize: 12.5,
+      fontWeight: '500',
       color: theme.colors.textSecondary,
+      letterSpacing: 0.1,
+    },
+    todayBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderRadius: 12,
+      backgroundColor: theme.colors.primary + '14',
+      borderWidth: 1,
+      borderColor: theme.colors.primary + '40',
+    },
+    todayBtnText: {
+      fontSize: 12,
+      fontWeight: '800',
+      color: theme.colors.primary,
+      letterSpacing: 0.2,
     },
 
-    monthHeader: {
+    /* ============ MONTH NAV ============ */
+    monthCard: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      marginTop: theme.spacing.xxl,
+      paddingHorizontal: 10,
+      paddingVertical: 12,
+      borderRadius: 20,
+      backgroundColor: theme.colors.surface,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      marginBottom: 12,
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 4},
+      shadowOpacity: 0.06,
+      shadowRadius: 12,
+      elevation: 3,
     },
-
-    monthTitle: {
-      fontSize:
-        theme.typography.subheading,
-      fontWeight: '800',
-      color: theme.colors.text,
-    },
-
-    arrowButton: {
+    arrowBtn: {
       width: 42,
       height: 42,
       borderRadius: 14,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor:
-        theme.colors.surface,
+      backgroundColor: theme.colors.background,
       borderWidth: 1,
       borderColor: theme.colors.border,
     },
-
-    arrow: {
-      fontSize: 26,
+    monthCenter: {
+      alignItems: 'center',
+      flex: 1,
+    },
+    monthTitle: {
+      fontSize: 22,
+      fontWeight: '900',
       color: theme.colors.text,
+      letterSpacing: -0.6,
+      lineHeight: 26,
     },
-
-    weekHeader: {
+    monthSubRow: {
       flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginTop: theme.spacing.xl,
-      paddingHorizontal: theme.spacing.sm,
+      alignItems: 'center',
+      gap: 6,
+      marginTop: 3,
     },
-
-    weekLabel: {
-      width: 34,
-      textAlign: 'center',
-      fontSize: theme.typography.caption,
-      fontWeight: '700',
+    monthYear: {
+      fontSize: 12,
+      fontWeight: '800',
       color: theme.colors.textSecondary,
+      letterSpacing: 1,
+    },
+    monthDot: {
+      width: 3,
+      height: 3,
+      borderRadius: 1.5,
+      backgroundColor: theme.colors.textLight,
+    },
+    monthTaskCount: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: theme.colors.primary,
+      letterSpacing: 0.3,
     },
 
-    daysGrid: {
+    /* ============ CALENDAR CARD ============ */
+    calendarCard: {
+      paddingHorizontal: 8,
+      paddingTop: 8,
+      paddingBottom: 14,
+      borderRadius: 20,
+      backgroundColor: theme.colors.surface,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      marginBottom: 18,
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 6},
+      shadowOpacity: 0.06,
+      shadowRadius: 14,
+      elevation: 3,
+    },
+
+    /* ============ WEEKDAYS ============ */
+    weekRow: {
+      flexDirection: 'row',
+      paddingVertical: 10,
+      marginBottom: 2,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+    },
+    weekCell: {
+      width: `${100 / 7}%`,
+      alignItems: 'center',
+    },
+    weekLabel: {
+      fontSize: 12,
+      fontWeight: '900',
+      color: theme.colors.textLight,
+      letterSpacing: 0.8,
+    },
+
+    /* ============ GRID ============ */
+    grid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: theme.spacing.sm,
-      marginTop: theme.spacing.md,
+      paddingTop: 6,
     },
-
-    day: {
-      width: 39,
-      height: 42,
-      borderRadius: 13,
+    dayCell: {
+      width: `${100 / 7}%`,
+      height: 64,
+      alignItems: 'center',
+      justifyContent: 'flex-start',
+      paddingTop: 5,
+    },
+    dayCircle: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor:
-        theme.colors.surface,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
+      borderWidth: 1.5,
+      borderColor: 'transparent',
     },
-
-    selectedDay: {
-      backgroundColor:
-        theme.colors.primary,
-      borderColor:
-        theme.colors.primary,
+    todayRing: {
+      borderColor: theme.colors.primary,
+      borderWidth: 1.8,
+      backgroundColor: theme.colors.primary + '0A',
     },
-
+    selectedDayCircle: {
+      backgroundColor: theme.colors.primary,
+      borderColor: theme.colors.primary,
+      shadowColor: theme.colors.primary,
+      shadowOffset: {width: 0, height: 6},
+      shadowOpacity: 0.4,
+      shadowRadius: 10,
+      elevation: 8,
+    },
     dayText: {
-      fontSize: theme.typography.bodySmall,
+      fontSize: 15,
       fontWeight: '700',
       color: theme.colors.text,
+      letterSpacing: -0.2,
     },
-
+    todayText: {
+      color: theme.colors.primary,
+      fontWeight: '900',
+    },
     selectedDayText: {
-      color: theme.colors.white,
+      color: '#FFFFFF',
+      fontWeight: '900',
+    },
+    dotRow: {
+      flexDirection: 'row',
+      gap: 3,
+      marginTop: 3,
+      height: 6,
+      alignItems: 'center',
+    },
+    dot: {
+      width: 5,
+      height: 5,
+      borderRadius: 2.5,
     },
 
+    /* ============ SELECTED HEADER ============ */
     selectedHeader: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
-      marginTop: theme.spacing.xxxl,
-      marginBottom: theme.spacing.lg,
+      marginBottom: 12,
+      paddingHorizontal: 2,
     },
-
+    selectedLabel: {
+      fontSize: 10,
+      fontWeight: '900',
+      letterSpacing: 1.4,
+      color: theme.colors.textLight,
+      marginBottom: 3,
+    },
     selectedTitle: {
-      fontSize:
-        theme.typography.subheading,
-      fontWeight: '800',
+      fontSize: 19,
+      fontWeight: '900',
       color: theme.colors.text,
+      letterSpacing: -0.5,
     },
-
-    taskCount: {
-      fontSize: theme.typography.caption,
-      fontWeight: '700',
-      color: theme.colors.textSecondary,
-    },
-
-    empty: {
-      alignItems: 'center',
-      paddingVertical: theme.spacing.xxxl,
-      paddingHorizontal: theme.spacing.xl,
-      borderRadius: theme.radius.xl,
-      backgroundColor:
-        theme.colors.surface,
+    countBadge: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      gap: 4,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 13,
       borderWidth: 1,
-      borderColor: theme.colors.border,
+    },
+    countBadgeNum: {
+      fontSize: 16,
+      fontWeight: '900',
+      letterSpacing: -0.4,
+    },
+    countBadgeLabel: {
+      fontSize: 11,
+      fontWeight: '700',
+      letterSpacing: 0.2,
     },
 
-    emptyIcon: {
-      width: 52,
-      height: 52,
-      borderRadius: 26,
-      textAlign: 'center',
-      textAlignVertical: 'center',
-      fontSize: 26,
-      fontWeight: '800',
-      color: theme.colors.success,
-      backgroundColor: '#DCFCE7',
-    },
-
-    emptyTitle: {
-      marginTop: theme.spacing.lg,
-      fontSize:
-        theme.typography.subheading,
-      fontWeight: '800',
-      color: theme.colors.text,
-    },
-
-    emptyText: {
-      marginTop: theme.spacing.xs,
-      fontSize: theme.typography.bodySmall,
-      color: theme.colors.textSecondary,
-    },
-
+    /* ============ TASK CARD ============ */
     taskCard: {
       flexDirection: 'row',
       alignItems: 'center',
-      marginBottom: theme.spacing.md,
-      padding: theme.spacing.lg,
-      borderRadius: theme.radius.xl,
-      backgroundColor:
-        theme.colors.surface,
+      marginBottom: 8,
+      paddingVertical: 13,
+      paddingHorizontal: 13,
+      borderRadius: 15,
+      backgroundColor: theme.colors.surface,
       borderWidth: 1,
       borderColor: theme.colors.border,
     },
-
-    taskIndicator: {
-      width: 5,
-      height: 44,
-      borderRadius: 3,
-      backgroundColor:
-        theme.colors.primary,
-      marginRight: theme.spacing.md,
+    taskCardDone: {
+      opacity: 0.55,
     },
-
+    taskIndicator: {
+      width: 4,
+      height: 36,
+      borderRadius: 2,
+      marginRight: 12,
+    },
     taskContent: {
       flex: 1,
     },
-
     taskTitle: {
-      fontSize: theme.typography.body,
+      fontSize: 14.5,
       fontWeight: '800',
       color: theme.colors.text,
+      letterSpacing: -0.2,
+    },
+    taskTitleDone: {
+      textDecorationLine: 'line-through',
+      color: theme.colors.textSecondary,
+    },
+    taskMetaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      marginTop: 4,
+    },
+    taskMeta: {
+      fontSize: 11.5,
+      fontWeight: '600',
+      color: theme.colors.textSecondary,
+      letterSpacing: 0.1,
+    },
+    taskMetaDot: {
+      fontSize: 11,
+      color: theme.colors.textLight,
+    },
+    doneTick: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginLeft: 10,
     },
 
-    taskDescription: {
-      marginTop: 4,
-      fontSize: theme.typography.caption,
+    /* ============ EMPTY STATE ============ */
+    empty: {
+      alignItems: 'center',
+      paddingVertical: 30,
+      paddingHorizontal: 22,
+      borderRadius: 20,
+      backgroundColor: theme.colors.surface,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    emptyIconWrap: {
+      width: 72,
+      height: 72,
+      borderRadius: 24,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.background,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      marginBottom: 16,
+    },
+    emptyTitle: {
+      fontSize: 16,
+      fontWeight: '800',
+      color: theme.colors.text,
+      letterSpacing: -0.3,
+      marginBottom: 5,
+      textAlign: 'center',
+    },
+    emptyText: {
+      fontSize: 13,
+      fontWeight: '500',
       color: theme.colors.textSecondary,
-      textTransform: 'capitalize',
+      textAlign: 'center',
+      lineHeight: 19,
+      maxWidth: 250,
+      marginBottom: 20,
+    },
+    addBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 20,
+      paddingVertical: 12,
+      borderRadius: 14,
+      shadowOffset: {width: 0, height: 6},
+      shadowOpacity: 0.32,
+      shadowRadius: 12,
+      elevation: 5,
+    },
+    addBtnText: {
+      color: '#FFFFFF',
+      fontSize: 13.5,
+      fontWeight: '800',
+      letterSpacing: 0.2,
+    },
+
+    /* ============ INLINE ADD ============ */
+    inlineAddBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 7,
+      paddingVertical: 13,
+      borderRadius: 15,
+      borderWidth: 1.5,
+      borderStyle: 'dashed',
+      marginTop: 6,
+    },
+    inlineAddText: {
+      fontSize: 13,
+      fontWeight: '800',
+      letterSpacing: 0.2,
     },
   });
 }

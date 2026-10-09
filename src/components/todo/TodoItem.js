@@ -1,9 +1,12 @@
+
 import {
   View,
   Text,
   Pressable,
   StyleSheet,
 } from 'react-native';
+
+import {Pencil, Trash2} from 'lucide-react-native';
 
 import useTheme from '../../hooks/useTheme';
 
@@ -108,31 +111,53 @@ function TodoItem({
         </Pressable>
       </View>
 
+      {/* ACTIONS — ICONS ONLY */}
       <View style={styles.actions}>
-        {onToggleFavorite ? (
-          <Pressable
-            style={styles.favButton}
-            onPress={() => onToggleFavorite(todo.id)}>
-            <Text
-              style={[
-                styles.favText,
-                todo.favorite && styles.favTextActive,
-              ]}>
-              {todo.favorite ? '★ Favorited' : '☆ Favorite'}
-            </Text>
-          </Pressable>
-        ) : null}
+        ```jsx
+{onToggleFavorite ? (
+  <Pressable
+    style={styles.favButton}
+    onPress={() => onToggleFavorite(todo.id)}
+    accessibilityRole="button"
+    accessibilityLabel="Toggle favourite"
+  >
+    <Text
+      style={[
+        styles.favIcon,
+        todo.favorite && styles.favIconActive,
+      ]}
+    >
+      {todo.favorite ? '★' : '☆'}
+    </Text>
 
+    <Text style={styles.favLabel}>Favourite</Text>
+  </Pressable>
+) : null}
+
+        {/* Edit — Blue Pencil Icon */}
         <Pressable
           style={styles.editButton}
-          onPress={() => onEdit(todo)}>
-          <Text style={styles.editText}>Edit</Text>
+          onPress={() => onEdit(todo)}
+          accessibilityRole="button"
+          accessibilityLabel="Edit todo">
+          <Pencil
+            size={18}
+            color={theme.colors.primary}
+            strokeWidth={2}
+          />
         </Pressable>
 
+        {/* Delete — Red Trash Icon */}
         <Pressable
           style={styles.deleteButton}
-          onPress={() => onDelete(todo.id)}>
-          <Text style={styles.deleteText}>Delete</Text>
+          onPress={() => onDelete(todo.id)}
+          accessibilityRole="button"
+          accessibilityLabel="Delete todo">
+          <Trash2
+            size={18}
+            color={theme.colors.danger}
+            strokeWidth={2}
+          />
         </Pressable>
       </View>
     </View>
@@ -261,42 +286,49 @@ function createStyles(theme) {
       borderTopColor: theme.colors.border,
     },
 
-    favButton: {
-      marginRight: 'auto',
-      paddingHorizontal: theme.spacing.sm,
-      paddingVertical: theme.spacing.xs,
-    },
+  
+favButton: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  marginRight: 'auto',
+  paddingHorizontal: theme.spacing.sm,
+  paddingVertical: theme.spacing.xs,
+  gap: 6,
+},
 
-    favText: {
-      fontSize: theme.typography.caption,
-      fontWeight: '700',
-      color: theme.colors.textSecondary,
-    },
+favLabel: {
+  fontSize: theme.typography.caption,
+  fontWeight: '600',
+  color: theme.colors.textSecondary,
+},
 
-    favTextActive: {
-      color: theme.colors.warning,
-    },
+favIcon: {
+  fontSize: 20,
+  color: theme.colors.textSecondary,
+},
 
+favIconActive: {
+  color: theme.colors.warning,
+},
+
+    // EDIT — Light Blue Background
     editButton: {
-      paddingHorizontal: theme.spacing.sm,
-      paddingVertical: theme.spacing.xs,
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#EAF2FF',
     },
 
-    editText: {
-      fontSize: theme.typography.caption,
-      fontWeight: '700',
-      color: theme.colors.primary,
-    },
-
+    // DELETE — Light Red Background
     deleteButton: {
-      paddingHorizontal: theme.spacing.sm,
-      paddingVertical: theme.spacing.xs,
-    },
-
-    deleteText: {
-      fontSize: theme.typography.caption,
-      fontWeight: '700',
-      color: theme.colors.danger,
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#FDECEC',
     },
   });
 }

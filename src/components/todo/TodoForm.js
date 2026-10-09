@@ -10,27 +10,48 @@ import {
   Platform,
 } from 'react-native';
 
-import {SafeAreaView} from 'react-native-safe-area-context';
-import {useEffect, useState} from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useEffect, useState } from 'react';
+
+import {
+  ChevronLeft,
+  ChevronDown,
+  ChevronUp,
+  Pencil,
+  Calendar,
+  Bell,
+  Check,
+  AlertCircle,
+  User,
+  Briefcase,
+  GraduationCap,
+  ShoppingCart,
+  Dumbbell,
+  Rocket,
+  ArrowDown,
+  Minus,
+  ArrowUp,
+  Folder,
+} from 'lucide-react-native';
 
 import AppButton from '../common/AppButton';
 
 import useTheme from '../../hooks/useTheme';
-import {getDueDateOptions} from '../../utils/dateUtils';
+import { getDueDateOptions } from '../../utils/dateUtils';
 
 const PRIORITIES = [
-  'low',
-  'medium',
-  'high',
+  { key: 'low', label: 'Low', Icon: ArrowDown, color: '#10B981' },
+  { key: 'medium', label: 'Medium', Icon: Minus, color: '#F59E0B' },
+  { key: 'high', label: 'High', Icon: ArrowUp, color: '#EF4444' },
 ];
 
 const CATEGORIES = [
-  'Personal',
-  'Work',
-  'Learning',
-  'Shopping',
-  'Health',
-  'Project',
+  { key: 'Personal', Icon: User },
+  { key: 'Work', Icon: Briefcase },
+  { key: 'Learning', Icon: GraduationCap },
+  { key: 'Shopping', Icon: ShoppingCart },
+  { key: 'Health', Icon: Dumbbell },
+  { key: 'Project', Icon: Rocket },
 ];
 
 function TodoForm({
@@ -39,85 +60,63 @@ function TodoForm({
   initialTodo = null,
   onSubmit,
   onCancel,
+  onChange,
 }) {
-  const {theme} = useTheme();
-
+  const { theme } = useTheme();
   const styles = createStyles(theme);
 
-  const [todoTitle, setTodoTitle] =
-    useState(initialTodo?.title || '');
+  const [todoTitle, setTodoTitle] = useState(initialTodo?.title || '');
+  const [description, setDescription] = useState(initialTodo?.description || '');
+  const [category, setCategory] = useState(initialTodo?.category || 'Personal');
+  const [priority, setPriority] = useState(initialTodo?.priority || 'medium');
+  const [dueDate, setDueDate] = useState(initialTodo?.dueDate || 'No date');
+  const [reminder, setReminder] = useState(Boolean(initialTodo?.reminder));
 
-  const [description, setDescription] =
-    useState(initialTodo?.description || '');
-
-  const [category, setCategory] =
-    useState(
-      initialTodo?.category || 'Personal',
-    );
-
-  const [priority, setPriority] =
-    useState(
-      initialTodo?.priority || 'medium',
-    );
-
-  const [dueDate, setDueDate] =
-    useState(
-      initialTodo?.dueDate || 'No date',
-    );
-
-  const [reminder, setReminder] =
-    useState(
-      Boolean(initialTodo?.reminder),
-    );
-
-  const [showCategory, setShowCategory] =
-    useState(false);
-
-  const [showDueDate, setShowDueDate] =
-    useState(false);
+  const [showCategory, setShowCategory] = useState(false);
+  const [showDueDate, setShowDueDate] = useState(false);
 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const [titleFocused, setTitleFocused] = useState(false);
+  const [descFocused, setDescFocused] = useState(false);
+
+  const isEdit = Boolean(initialTodo);
+
+  const primaryColor = theme.colors.primary ?? '#7C3AED';
+  const textColor = theme.colors.text ?? '#111';
+  const textLight = theme.colors.textLight ?? '#999';
+  const textSecondary = theme.colors.textSecondary ?? '#666';
+  const borderColor = theme.colors.border ?? '#E5E7EB';
+  const surfaceColor = theme.colors.surface ?? '#FAFAFA';
+
+  // 🎯 Sync with initialTodo
   useEffect(() => {
     setTodoTitle(initialTodo?.title || '');
-    setDescription(
-      initialTodo?.description || '',
-    );
-    setCategory(
-      initialTodo?.category || 'Personal',
-    );
-    setPriority(
-      initialTodo?.priority || 'medium',
-    );
-    setDueDate(
-      initialTodo?.dueDate || 'No date',
-    );
-    setReminder(
-      Boolean(initialTodo?.reminder),
-    );
+    setDescription(initialTodo?.description || '');
+    setCategory(initialTodo?.category || 'Personal');
+    setPriority(initialTodo?.priority || 'medium');
+    setDueDate(initialTodo?.dueDate || 'No date');
+    setReminder(Boolean(initialTodo?.reminder));
   }, [initialTodo]);
+
+  const notifyChange = () => {
+    if (typeof onChange === 'function') onChange();
+  };
 
   async function handleSubmit() {
     setError('');
 
-    const cleanTitle =
-      todoTitle.trim();
-
-    const cleanDescription =
-      description.trim();
+    const cleanTitle = todoTitle.trim();
+    const cleanDescription = description.trim();
 
     if (!cleanTitle) {
-      setError(
-        'Please enter a todo title.',
-      );
+      setError('Please enter a todo title.');
       return;
     }
 
     if (cleanTitle.length < 2) {
-      setError(
-        'Todo title must be at least 2 characters.',
-      );
+      setError('Todo title must be at least 2 characters.');
       return;
     }
 
@@ -133,127 +132,174 @@ function TodoForm({
         reminder,
       });
     } catch {
-      setError(
-        'Unable to save todo. Please try again.',
-      );
+      setError('Unable to save todo. Please try again.');
     } finally {
       setLoading(false);
     }
   }
 
+  const titleRemaining = 100 - todoTitle.length;
+  const descRemaining = 500 - description.length;
+  const titleNearLimit = titleRemaining <= 10;
+  const descNearLimit = descRemaining <= 20;
+
+  const SelectedCategoryIcon =
+    CATEGORIES.find(c => c.key === category)?.Icon || Folder;
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.keyboard}
-        behavior={
-          Platform.OS === 'ios'
-            ? 'padding'
-            : undefined
-        }>
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         <ScrollView
-          contentContainerStyle={
-            styles.scrollContent
-          }
+          contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}>
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.container}>
+            {/* ---------- Header ---------- */}
             <View style={styles.header}>
               <Pressable
-                style={styles.backButton}
-                onPress={onCancel}>
-                <Text style={styles.backText}>
-                  ‹
-                </Text>
+                style={({ pressed }) => [
+                  styles.backButton,
+                  pressed && styles.backButtonPressed,
+                ]}
+                onPress={onCancel}
+                hitSlop={10}
+                android_ripple={{ color: borderColor, borderless: true }}
+              >
+                <ChevronLeft size={24} color={textColor} strokeWidth={2.5} />
               </Pressable>
 
-              <View
-                style={styles.headerContent}>
-                <Text
-                  style={styles.headerTitle}>
-                  {title}
-                </Text>
-
-                <Text
-                  style={styles.headerSubtitle}>
-                  {subtitle}
-                </Text>
+              <View style={styles.headerContent}>
+                <Text style={styles.headerTitle}>{title}</Text>
+                <Text style={styles.headerSubtitle}>{subtitle}</Text>
               </View>
             </View>
 
+            {/* ---------- Title ---------- */}
             <View style={styles.field}>
-              <Text style={styles.label}>
-                Title
-              </Text>
+              <View style={styles.labelRow}>
+                <Text style={styles.label}>Title</Text>
+                <Text
+                  style={[
+                    styles.counter,
+                    titleNearLimit && styles.counterWarning,
+                  ]}
+                >
+                  {todoTitle.length}/100
+                </Text>
+              </View>
 
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Learn React Native"
-                placeholderTextColor={
-                  theme.colors.textLight
-                }
-                value={todoTitle}
-                onChangeText={setTodoTitle}
-                maxLength={100}
-              />
-
-              <Text style={styles.counter}>
-                {todoTitle.length}/100
-              </Text>
-            </View>
-
-            <View style={styles.field}>
-              <Text style={styles.label}>
-                Description
-              </Text>
-
-              <TextInput
+              <View
                 style={[
-                  styles.input,
-                  styles.textArea,
+                  styles.inputWrap,
+                  titleFocused && styles.inputWrapFocused,
                 ]}
-                placeholder="Add some details..."
-                placeholderTextColor={
-                  theme.colors.textLight
-                }
-                value={description}
-                onChangeText={setDescription}
-                multiline
-                maxLength={500}
-              />
-
-              <Text style={styles.counter}>
-                {description.length}/500
-              </Text>
+              >
+                <Pencil
+                  size={18}
+                  color={titleFocused ? primaryColor : textLight}
+                  strokeWidth={2}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. Learn React Native"
+                  placeholderTextColor={textLight}
+                  value={todoTitle}
+                  onChangeText={text => {
+                    setTodoTitle(text);
+                    notifyChange();
+                  }}
+                  onFocus={() => setTitleFocused(true)}
+                  onBlur={() => setTitleFocused(false)}
+                  maxLength={100}
+                  returnKeyType="next"
+                />
+              </View>
             </View>
 
+            {/* ---------- Description ---------- */}
             <View style={styles.field}>
-              <Text style={styles.label}>
-                Priority
-              </Text>
+              <View style={styles.labelRow}>
+                <Text style={styles.label}>Description</Text>
+                <Text
+                  style={[
+                    styles.counter,
+                    descNearLimit && styles.counterWarning,
+                  ]}
+                >
+                  {description.length}/500
+                </Text>
+              </View>
 
-              <View style={styles.row}>
+              <View
+                style={[
+                  styles.inputWrap,
+                  styles.textAreaWrap,
+                  descFocused && styles.inputWrapFocused,
+                ]}
+              >
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  placeholder="Add some details... (optional)"
+                  placeholderTextColor={textLight}
+                  value={description}
+                  onChangeText={text => {
+                    setDescription(text);
+                    notifyChange();
+                  }}
+                  onFocus={() => setDescFocused(true)}
+                  onBlur={() => setDescFocused(false)}
+                  multiline
+                  maxLength={500}
+                  textAlignVertical="top"
+                />
+              </View>
+            </View>
+
+            {/* ---------- Priority ---------- */}
+            <View style={styles.field}>
+              <Text style={styles.label}>Priority</Text>
+
+              <View style={styles.priorityRow}>
                 {PRIORITIES.map(item => {
-                  const selected =
-                    priority === item;
-
+                  const selected = priority === item.key;
+                  const IconComp = item.Icon;
                   return (
                     <Pressable
-                      key={item}
-                      style={[
-                        styles.option,
-                        selected &&
-                          styles.selectedOption,
+                      key={item.key}
+                      style={({ pressed }) => [
+                        styles.priorityOption,
+                        selected && {
+                          borderColor: item.color,
+                          backgroundColor: item.color + '15',
+                        },
+                        pressed && { opacity: 0.85 },
                       ]}
-                      onPress={() =>
-                        setPriority(item)
-                      }>
+                      onPress={() => {
+                        setPriority(item.key);
+                        notifyChange();
+                      }}
+                      android_ripple={{ color: item.color + '30' }}
+                    >
+                      <IconComp
+                        size={22}
+                        color={selected ? item.color : textLight}
+                        strokeWidth={2.5}
+                      />
                       <Text
                         style={[
-                          styles.optionText,
-                          selected &&
-                            styles.selectedOptionText,
-                        ]}>
-                        {item}
+                          styles.priorityText,
+                          selected && {
+                            color: item.color,
+                            fontWeight: '800',
+                          },
+                        ]}
+                      >
+                        {item.label}
                       </Text>
                     </Pressable>
                   );
@@ -261,176 +307,199 @@ function TodoForm({
               </View>
             </View>
 
+            {/* ---------- Category ---------- */}
             <View style={styles.field}>
-              <Text style={styles.label}>
-                Category
-              </Text>
+              <Text style={styles.label}>Category</Text>
 
               <Pressable
-                style={styles.select}
-                onPress={() =>
-                  setShowCategory(
-                    current => !current,
-                  )
-                }>
-                <Text
-                  style={styles.selectText}>
-                  {category}
-                </Text>
-
-                <Text
-                  style={styles.arrow}>
-                  {showCategory
-                    ? '⌃'
-                    : '⌄'}
-                </Text>
-              </Pressable>
-
-              {showCategory ? (
-                <View
-                  style={styles.dropdown}>
-                  {CATEGORIES.map(item => (
-                    <Pressable
-                      key={item}
-                      style={[
-                        styles.dropdownItem,
-                        item === category &&
-                          styles.selectedDropdownItem,
-                      ]}
-                      onPress={() => {
-                        setCategory(item);
-                        setShowCategory(
-                          false,
-                        );
-                      }}>
-                      <Text
-                        style={[
-                          styles.dropdownText,
-                          item === category &&
-                            styles.selectedDropdownText,
-                        ]}>
-                        {item}
-                      </Text>
-                    </Pressable>
-                  ))}
+                style={({ pressed }) => [
+                  styles.select,
+                  pressed && { opacity: 0.85 },
+                ]}
+                onPress={() => {
+                  setShowCategory(curr => !curr);
+                  setShowDueDate(false);
+                }}
+              >
+                <View style={styles.selectLeft}>
+                  <SelectedCategoryIcon
+                    size={20}
+                    color={primaryColor}
+                    strokeWidth={2}
+                  />
+                  <Text style={styles.selectText}>{category}</Text>
                 </View>
-              ) : null}
-            </View>
-
-            <View style={styles.field}>
-              <Text style={styles.label}>
-                Due Date
-              </Text>
-
-              <Pressable
-                style={styles.select}
-                onPress={() =>
-                  setShowDueDate(
-                    current => !current,
-                  )
-                }>
-                <Text
-                  style={styles.selectText}>
-                  {dueDate}
-                </Text>
-
-                <Text
-                  style={styles.arrow}>
-                  {showDueDate
-                    ? '⌃'
-                    : '⌄'}
-                </Text>
+                {showCategory ? (
+                  <ChevronUp size={20} color={textSecondary} strokeWidth={2} />
+                ) : (
+                  <ChevronDown size={20} color={textSecondary} strokeWidth={2} />
+                )}
               </Pressable>
 
-              {showDueDate ? (
-                <View
-                  style={styles.dropdown}>
-                  {getDueDateOptions().map(
-                    item => (
+              {showCategory && (
+                <View style={styles.dropdown}>
+                  {CATEGORIES.map(item => {
+                    const selected = item.key === category;
+                    const IconComp = item.Icon;
+                    return (
                       <Pressable
-                        key={item}
-                        style={[
+                        key={item.key}
+                        style={({ pressed }) => [
                           styles.dropdownItem,
-                          item === dueDate &&
-                            styles.selectedDropdownItem,
+                          selected && styles.selectedDropdownItem,
+                          pressed && styles.dropdownItemPressed,
                         ]}
                         onPress={() => {
-                          setDueDate(item);
-                          setShowDueDate(
-                            false,
-                          );
-                        }}>
+                          setCategory(item.key);
+                          setShowCategory(false);
+                          notifyChange();
+                        }}
+                      >
+                        <IconComp
+                          size={20}
+                          color={selected ? primaryColor : textSecondary}
+                          strokeWidth={2}
+                        />
                         <Text
                           style={[
                             styles.dropdownText,
-                            item === dueDate &&
-                              styles.selectedDropdownText,
-                          ]}>
-                          {item}
+                            selected && styles.selectedDropdownText,
+                          ]}
+                        >
+                          {item.key}
                         </Text>
+                        {selected && (
+                          <Check
+                            size={20}
+                            color={primaryColor}
+                            strokeWidth={3}
+                            style={styles.checkIcon}
+                          />
+                        )}
                       </Pressable>
-                    ),
-                  )}
+                    );
+                  })}
                 </View>
-              ) : null}
+              )}
             </View>
 
-            <View
-              style={styles.reminderRow}>
-              <View
-                style={
-                  styles.reminderContent
-                }>
-                <Text
-                  style={styles.label}>
-                  Reminder
-                </Text>
+            {/* ---------- Due Date ---------- */}
+            <View style={styles.field}>
+              <Text style={styles.label}>Due Date</Text>
 
-                <Text
-                  style={
-                    styles.reminderDescription
-                  }>
-                  Get reminded about this task.
-                </Text>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.select,
+                  pressed && { opacity: 0.85 },
+                ]}
+                onPress={() => {
+                  setShowDueDate(curr => !curr);
+                  setShowCategory(false);
+                }}
+              >
+                <View style={styles.selectLeft}>
+                  <Calendar size={20} color={primaryColor} strokeWidth={2} />
+                  <Text style={styles.selectText}>{dueDate}</Text>
+                </View>
+                {showDueDate ? (
+                  <ChevronUp size={20} color={textSecondary} strokeWidth={2} />
+                ) : (
+                  <ChevronDown size={20} color={textSecondary} strokeWidth={2} />
+                )}
+              </Pressable>
+
+              {showDueDate && (
+                <View style={styles.dropdown}>
+                  {getDueDateOptions().map(item => {
+                    const selected = item === dueDate;
+                    return (
+                      <Pressable
+                        key={item}
+                        style={({ pressed }) => [
+                          styles.dropdownItem,
+                          selected && styles.selectedDropdownItem,
+                          pressed && styles.dropdownItemPressed,
+                        ]}
+                        onPress={() => {
+                          setDueDate(item);
+                          setShowDueDate(false);
+                          notifyChange();
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.dropdownText,
+                            selected && styles.selectedDropdownText,
+                          ]}
+                        >
+                          {item}
+                        </Text>
+                        {selected && (
+                          <Check
+                            size={20}
+                            color={primaryColor}
+                            strokeWidth={3}
+                            style={styles.checkIcon}
+                          />
+                        )}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+
+            {/* ---------- Reminder ---------- */}
+            <View style={styles.reminderRow}>
+              <View style={styles.reminderLeft}>
+                <View style={styles.reminderIconWrap}>
+                  <Bell size={20} color={primaryColor} strokeWidth={2} />
+                </View>
+                <View style={styles.reminderContent}>
+                  <Text style={styles.label}>Reminder</Text>
+                  <Text style={styles.reminderDescription}>
+                    Get notified about this task
+                  </Text>
+                </View>
               </View>
 
               <Switch
                 value={reminder}
-                onValueChange={setReminder}
-                trackColor={{
-                  false: theme.colors.border,
-                  true: theme.colors.primary,
+                onValueChange={value => {
+                  setReminder(value);
+                  notifyChange();
                 }}
+                trackColor={{
+                  false: borderColor,
+                  true: primaryColor,
+                }}
+                thumbColor="#fff"
               />
             </View>
 
+            {/* ---------- Error ---------- */}
             {error ? (
-              <View
-                style={styles.errorBox}>
-                <Text
-                  style={styles.errorText}>
-                  {error}
-                </Text>
+              <View style={styles.errorBox}>
+                <AlertCircle size={20} color="#EF4444" strokeWidth={2.5} />
+                <Text style={styles.errorText}>{error}</Text>
               </View>
             ) : null}
 
+            {/* ---------- Actions ---------- */}
             <AppButton
-              title={
-                initialTodo
-                  ? 'Save Changes'
-                  : 'Save Todo'
-              }
+              title={isEdit ? 'Save Changes' : 'Save Todo'}
               onPress={handleSubmit}
               loading={loading}
             />
 
             <Pressable
-              style={styles.cancelButton}
-              onPress={onCancel}>
-              <Text
-                style={styles.cancelText}>
-                Cancel
-              </Text>
+              style={({ pressed }) => [
+                styles.cancelButton,
+                pressed && { opacity: 0.6 },
+              ]}
+              onPress={onCancel}
+            >
+              <Text style={styles.cancelText}>Cancel</Text>
             </Pressable>
           </View>
         </ScrollView>
@@ -440,225 +509,272 @@ function TodoForm({
 }
 
 function createStyles(theme) {
+  const colors = theme?.colors ?? {};
+  const spacing = theme?.spacing ?? {};
+  const typography = theme?.typography ?? {};
+  const radius = theme?.radius ?? {};
+
   return StyleSheet.create({
     safeArea: {
       flex: 1,
-      backgroundColor: theme.colors.background,
+      backgroundColor: colors.background ?? '#fff',
     },
-
-    keyboard: {
-      flex: 1,
-    },
-
-    scrollContent: {
-      flexGrow: 1,
-    },
+    keyboard: { flex: 1 },
+    scrollContent: { flexGrow: 1 },
 
     container: {
-      padding: theme.spacing.xl,
+      padding: spacing.xl ?? 24,
+      paddingBottom: spacing.xxl ?? 32,
     },
 
+    /* ---------- Header ---------- */
     header: {
       flexDirection: 'row',
       alignItems: 'center',
-      marginBottom: theme.spacing.xxl,
+      marginBottom: spacing.xxl ?? 32,
     },
-
     backButton: {
       width: 44,
       height: 44,
+      borderRadius: 22,
       alignItems: 'center',
       justifyContent: 'center',
-      marginRight: theme.spacing.sm,
+      backgroundColor: colors.surface ?? '#F3F4F6',
+      marginRight: spacing.md ?? 12,
     },
-
-    backText: {
-      fontSize: 38,
-      lineHeight: 38,
-      color: theme.colors.text,
-    },
-
-    headerContent: {
-      flex: 1,
-    },
-
+    backButtonPressed: { opacity: 0.7 },
+    headerContent: { flex: 1 },
     headerTitle: {
-      fontSize: theme.typography.heading,
+      fontSize: typography.heading ?? 24,
       fontWeight: '800',
-      color: theme.colors.text,
+      color: colors.text ?? '#111',
+      letterSpacing: -0.3,
     },
-
     headerSubtitle: {
       marginTop: 4,
-      fontSize: theme.typography.bodySmall,
+      fontSize: typography.bodySmall ?? 14,
       lineHeight: 20,
-      color: theme.colors.textSecondary,
+      color: colors.textSecondary ?? '#666',
     },
 
-    field: {
-      marginBottom: theme.spacing.xl,
-    },
+    /* ---------- Fields ---------- */
+    field: { marginBottom: spacing.xl ?? 24 },
 
-    label: {
-      marginBottom: theme.spacing.sm,
-      fontSize: theme.typography.bodySmall,
-      fontWeight: '700',
-      color: theme.colors.text,
-    },
-
-    input: {
-      minHeight: 52,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      borderRadius: theme.radius.lg,
-      paddingHorizontal: theme.spacing.lg,
-      fontSize: theme.typography.body,
-      color: theme.colors.text,
-      backgroundColor: theme.colors.surface,
-    },
-
-    textArea: {
-      minHeight: 130,
-      paddingTop: theme.spacing.lg,
-      textAlignVertical: 'top',
-    },
-
-    counter: {
-      marginTop: theme.spacing.xs,
-      textAlign: 'right',
-      fontSize: theme.typography.caption,
-      color: theme.colors.textLight,
-    },
-
-    row: {
-      flexDirection: 'row',
-      gap: theme.spacing.sm,
-    },
-
-    option: {
-      flex: 1,
-      minHeight: 46,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      borderRadius: theme.radius.md,
-      backgroundColor: theme.colors.surface,
-    },
-
-    selectedOption: {
-      borderColor: theme.colors.primary,
-      backgroundColor: theme.colors.primary,
-    },
-
-    optionText: {
-      fontSize: theme.typography.bodySmall,
-      fontWeight: '600',
-      color: theme.colors.textSecondary,
-      textTransform: 'capitalize',
-    },
-
-    selectedOptionText: {
-      color: theme.colors.white,
-      fontWeight: '800',
-    },
-
-    select: {
-      minHeight: 52,
+    labelRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingHorizontal: theme.spacing.lg,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      borderRadius: theme.radius.lg,
-      backgroundColor: theme.colors.surface,
+      marginBottom: spacing.sm ?? 8,
     },
 
+    label: {
+      fontSize: typography.bodySmall ?? 14,
+      fontWeight: '700',
+      color: colors.text ?? '#111',
+      letterSpacing: 0.2,
+    },
+
+    counter: {
+      fontSize: typography.caption ?? 12,
+      color: colors.textLight ?? '#999',
+    },
+    counterWarning: {
+      color: '#EF4444',
+      fontWeight: '700',
+    },
+
+    /* ---------- Inputs ---------- */
+    inputWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      minHeight: 56,
+      borderWidth: 1.5,
+      borderColor: colors.border ?? '#E5E7EB',
+      borderRadius: radius.lg ?? 14,
+      paddingHorizontal: spacing.lg ?? 16,
+      backgroundColor: colors.surface ?? '#FAFAFA',
+    },
+    textAreaWrap: {
+      alignItems: 'flex-start',
+      paddingTop: spacing.md ?? 12,
+      minHeight: 130,
+    },
+    inputWrapFocused: {
+      borderColor: colors.primary ?? '#7C3AED',
+      backgroundColor: colors.background ?? '#fff',
+      shadowColor: colors.primary ?? '#7C3AED',
+      shadowOpacity: 0.12,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: 2,
+    },
+    inputIcon: {
+      marginRight: spacing.sm ?? 8,
+    },
+    input: {
+      flex: 1,
+      fontSize: typography.body ?? 16,
+      color: colors.text ?? '#111',
+      paddingVertical: 0,
+    },
+    textArea: {
+      minHeight: 100,
+      paddingTop: 0,
+    },
+
+    /* ---------- Priority ---------- */
+    priorityRow: {
+      flexDirection: 'row',
+      gap: spacing.sm ?? 8,
+    },
+    priorityOption: {
+      flex: 1,
+      minHeight: 60,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 4,
+      borderWidth: 1.5,
+      borderColor: colors.border ?? '#E5E7EB',
+      borderRadius: radius.md ?? 12,
+      backgroundColor: colors.surface ?? '#FAFAFA',
+    },
+    priorityText: {
+      fontSize: typography.caption ?? 12,
+      fontWeight: '600',
+      color: colors.textSecondary ?? '#666',
+      textTransform: 'capitalize',
+    },
+
+    /* ---------- Select / Dropdown ---------- */
+    select: {
+      minHeight: 56,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.lg ?? 16,
+      borderWidth: 1.5,
+      borderColor: colors.border ?? '#E5E7EB',
+      borderRadius: radius.lg ?? 14,
+      backgroundColor: colors.surface ?? '#FAFAFA',
+    },
+    selectLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm ?? 8,
+      flex: 1,
+    },
     selectText: {
-      fontSize: theme.typography.body,
-      color: theme.colors.text,
-    },
-
-    arrow: {
-      fontSize: 20,
-      color: theme.colors.textSecondary,
+      fontSize: typography.body ?? 16,
+      color: colors.text ?? '#111',
+      fontWeight: '500',
     },
 
     dropdown: {
-      marginTop: theme.spacing.sm,
+      marginTop: spacing.sm ?? 8,
       overflow: 'hidden',
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      borderRadius: theme.radius.lg,
-      backgroundColor: theme.colors.surface,
+      borderWidth: 1.5,
+      borderColor: colors.border ?? '#E5E7EB',
+      borderRadius: radius.lg ?? 14,
+      backgroundColor: colors.surface ?? '#fff',
+      shadowColor: '#000',
+      shadowOpacity: 0.05,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 2,
     },
-
     dropdownItem: {
-      minHeight: 48,
-      justifyContent: 'center',
-      paddingHorizontal: theme.spacing.lg,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm ?? 8,
+      minHeight: 52,
+      paddingHorizontal: spacing.lg ?? 16,
       borderBottomWidth: 1,
-      borderBottomColor: theme.colors.border,
+      borderBottomColor: colors.border ?? '#F3F4F6',
     },
-
+    dropdownItemPressed: {
+      backgroundColor: colors.background ?? '#F9FAFB',
+    },
     selectedDropdownItem: {
-      backgroundColor: theme.colors.background,
+      backgroundColor: (colors.primary ?? '#7C3AED') + '12',
     },
-
     dropdownText: {
-      fontSize: theme.typography.bodySmall,
-      color: theme.colors.text,
+      flex: 1,
+      fontSize: typography.bodySmall ?? 14,
+      color: colors.text ?? '#111',
+      fontWeight: '500',
     },
-
     selectedDropdownText: {
       fontWeight: '800',
-      color: theme.colors.primary,
+      color: colors.primary ?? '#7C3AED',
+    },
+    checkIcon: {
+      marginLeft: 'auto',
     },
 
+    /* ---------- Reminder ---------- */
     reminderRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      marginBottom: theme.spacing.xl,
-      paddingVertical: theme.spacing.md,
-      borderTopWidth: 1,
-      borderBottomWidth: 1,
-      borderColor: theme.colors.border,
+      marginBottom: spacing.xl ?? 24,
+      padding: spacing.md ?? 12,
+      borderWidth: 1.5,
+      borderColor: colors.border ?? '#E5E7EB',
+      borderRadius: radius.lg ?? 14,
+      backgroundColor: colors.surface ?? '#FAFAFA',
     },
-
-    reminderContent: {
+    reminderLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
       flex: 1,
+      gap: spacing.md ?? 12,
     },
-
+    reminderIconWrap: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: (colors.primary ?? '#7C3AED') + '15',
+    },
+    reminderContent: { flex: 1 },
     reminderDescription: {
-      marginTop: -theme.spacing.xs,
-      fontSize: theme.typography.caption,
-      color: theme.colors.textSecondary,
+      marginTop: 2,
+      fontSize: typography.caption ?? 12,
+      color: colors.textSecondary ?? '#666',
     },
 
+    /* ---------- Error ---------- */
     errorBox: {
-      marginBottom: theme.spacing.lg,
-      padding: theme.spacing.md,
-      borderRadius: theme.radius.md,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm ?? 8,
+      marginBottom: spacing.lg ?? 16,
+      padding: spacing.md ?? 12,
+      borderRadius: radius.md ?? 12,
       backgroundColor: '#FEE2E2',
+      borderWidth: 1,
+      borderColor: '#FECACA',
     },
-
     errorText: {
-      fontSize: theme.typography.bodySmall,
+      flex: 1,
+      fontSize: typography.bodySmall ?? 14,
       lineHeight: 20,
-      color: theme.colors.danger,
+      color: '#B91C1C',
+      fontWeight: '500',
     },
 
+    /* ---------- Cancel ---------- */
     cancelButton: {
       alignItems: 'center',
-      paddingVertical: theme.spacing.lg,
+      paddingVertical: spacing.lg ?? 16,
+      marginTop: spacing.sm ?? 8,
     },
-
     cancelText: {
-      fontSize: theme.typography.bodySmall,
+      fontSize: typography.bodySmall ?? 14,
       fontWeight: '700',
-      color: theme.colors.textSecondary,
+      color: colors.textSecondary ?? '#666',
+      letterSpacing: 0.3,
     },
   });
 }

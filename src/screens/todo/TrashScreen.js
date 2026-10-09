@@ -4,53 +4,171 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
-  Alert,
+  RefreshControl,
+  LayoutAnimation,
+  UIManager,
+  Platform,
 } from 'react-native';
-import {SafeAreaView} from 'react-native-safe-area-context';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import {DrawerActions} from '@react-navigation/native';
+import {
+  Menu,
+  Trash2,
+  RotateCcw,
+  Search,
+  X,
+  Info,
+  Inbox,
+  Clock,
+  Layers,
+  Flame,
+  ShieldAlert,
+  ChevronRight,
+} from 'lucide-react-native';
 
 import useTodos from '../../hooks/useTodos';
 import {useTheme} from '../../hooks/useTheme';
 import ConfirmModal from '../../components/common/ConfirmModal';
 
+if (
+  Platform.OS === 'android' &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+/* --------------------------- HELPERS --------------------------- */
+
+const CATEGORY_COLORS = {
+  Personal: '#6366F1',
+  Work: '#3B82F6',
+  Learning: '#8B5CF6',
+  Shopping: '#EC4899',
+  Health: '#10B981',
+  Project: '#F59E0B',
+  Finance: '#14B8A6',
+  Family: '#F97316',
+  Home: '#06B6D4',
+  Travel: '#A855F7',
+  Other: '#64748B',
+  General: '#64748B',
+};
+
+function formatDeletedAgo(task) {
+  const ts = task.deletedAt;
+  if (!ts) return 'In Trash';
+
+  const now = new Date();
+  const d = new Date(ts);
+  const diffMs = now.getTime() - d.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+  return d.toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
+}
+
+function sortTasks(a, b) {
+  const aTs = a.deletedAt || 0;
+  const bTs = b.deletedAt || 0;
+  return bTs - aTs;
+}
+
+/* --------------------------- SCREEN --------------------------- */
+
 function TrashScreen({navigation}) {
   const {theme} = useTheme();
-  const {
-    tasks,
-    restoreTodo,
-    permanentlyDeleteTodo,
-  } = useTodos();
+  const insets = useSafeAreaInsets();
+  const {tasks, restoreTodo, permanentlyDeleteTodo} = useTodos();
 
   const [confirmPermanentId, setConfirmPermanentId] = useState(null);
   const [confirmEmptyTrash, setConfirmEmptyTrash] = useState(false);
+  const [search, setSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const trashedTasks = useMemo(
-    () => tasks.filter(task => task.deleted === true),
-    [tasks],
+  const styles = useMemo(
+    () => createStyles(theme, insets),
+    [theme, insets],
   );
 
+  /* --------------------------- NAVIGATION --------------------------- */
   function openDrawer() {
     navigation.dispatch(DrawerActions.openDrawer());
   }
 
+  /* --------------------------- TRASHED TASKS --------------------------- */
+  const trashedTasks = useMemo(
+    () =>
+      (tasks || [])
+        .filter(t => t && t.deleted === true)
+        .sort(sortTasks),
+    [tasks],
+  );
+
+  const filteredTasks = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return trashedTasks;
+    return trashedTasks.filter(
+      t =>
+        (t.title || '').toLowerCase().includes(q) ||
+        (t.description || '').toLowerCase().includes(q) ||
+        (t.category || '').toLowerCase().includes(q),
+    );
+  }, [trashedTasks, search]);
+
+  /* --------------------------- STATS --------------------------- */
+  const oldestDays = useMemo(() => {
+    if (trashedTasks.length === 0) return 0;
+    const oldest = trashedTasks.reduce((min, t) => {
+      const ts = t.deletedAt || 0;
+      if (ts === 0) return min;
+      return ts < min ? ts : min;
+    }, Infinity);
+    if (!isFinite(oldest)) return 0;
+    return Math.floor((Date.now() - oldest) / 86400000);
+  }, [trashedTasks]);
+
+  /* --------------------------- HANDLERS --------------------------- */
   function handleRestore(id) {
     restoreTodo(id);
   }
 
   function handlePermanentDelete(id) {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     permanentlyDeleteTodo(id);
     setConfirmPermanentId(null);
   }
 
   function handleEmptyTrash() {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     trashedTasks.forEach(task => {
       permanentlyDeleteTodo(task.id);
     });
     setConfirmEmptyTrash(false);
   }
 
+  function onRefresh() {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 600);
+  }
+
+  /* --------------------------- RENDER ITEM --------------------------- */
   const renderItem = ({item}) => {
+    const categoryColor =
+      CATEGORY_COLORS[item.category] || theme.colors.textSecondary;
+    const deletedAgo = formatDeletedAgo(item);
+
     return (
       <View
         style={[
@@ -60,99 +178,97 @@ function TrashScreen({navigation}) {
             borderColor: theme.colors.border,
           },
         ]}>
-        <View style={styles.topRow}>
+        <View style={styles.cardTopRow}>
           <View
             style={[
               styles.trashIcon,
-              {
-                backgroundColor: `${theme.colors.danger}14`,
-              },
+              {backgroundColor: theme.colors.danger + '14'},
             ]}>
-            <Text
-              style={[
-                styles.trashIconText,
-                {
-                  color: theme.colors.danger,
-                },
-              ]}>
-              🗑
-            </Text>
+            <Trash2
+              size={18}
+              color={theme.colors.danger}
+              strokeWidth={2.4}
+            />
           </View>
 
           <View style={styles.content}>
             <Text
-              numberOfLines={1}
-              style={[
-                styles.cardTitle,
-                {
-                  color: theme.colors.text,
-                },
-              ]}>
-              {item.title}
+              numberOfLines={2}
+              style={[styles.cardTitle, {color: theme.colors.text}]}>
+              {item.title || 'Untitled task'}
             </Text>
 
             {!!item.description && (
               <Text
-                numberOfLines={2}
+                numberOfLines={1}
                 style={[
                   styles.description,
-                  {
-                    color: theme.colors.textSecondary,
-                  },
+                  {color: theme.colors.textSecondary},
                 ]}>
                 {item.description}
               </Text>
             )}
-          </View>
-        </View>
 
-        <View style={styles.metaRow}>
-          <View
-            style={[
-              styles.categoryBadge,
-              {
-                backgroundColor: `${theme.colors.primary}12`,
-              },
-            ]}>
-            <Text
-              style={[
-                styles.categoryText,
-                {
-                  color: theme.colors.primary,
-                },
-              ]}>
-              {item.category || 'General'}
-            </Text>
+            <View style={styles.metaRow}>
+              <View
+                style={[
+                  styles.categoryDot,
+                  {backgroundColor: categoryColor},
+                ]}
+              />
+              <Text
+                style={[
+                  styles.metaText,
+                  {color: theme.colors.textSecondary},
+                ]}
+                numberOfLines={1}>
+                {item.category || 'General'}
+              </Text>
+              <Text
+                style={[
+                  styles.metaDot,
+                  {color: theme.colors.textLight},
+                ]}>
+                •
+              </Text>
+              <Clock
+                size={10}
+                color={theme.colors.textLight}
+                strokeWidth={2.6}
+              />
+              <Text
+                style={[
+                  styles.metaText,
+                  {color: theme.colors.textSecondary},
+                ]}>
+                {deletedAgo}
+              </Text>
+            </View>
           </View>
-
-          <Text
-            style={[
-              styles.deletedText,
-              {
-                color: theme.colors.textSecondary,
-              },
-            ]}>
-            In Trash
-          </Text>
         </View>
 
         <View style={styles.actions}>
           <Pressable
             onPress={() => handleRestore(item.id)}
+            accessibilityRole="button"
+            accessibilityLabel={`Restore ${item.title}`}
             style={({pressed}) => [
-              styles.actionButton,
-              styles.restoreButton,
+              styles.actionBtn,
               {
-                borderColor: theme.colors.border,
+                borderColor: theme.colors.primary + '40',
+                backgroundColor: theme.colors.primary + '0D',
                 opacity: pressed ? 0.75 : 1,
               },
             ]}>
+            <RotateCcw
+              size={13}
+              color={theme.colors.primary}
+              strokeWidth={2.6}
+            />
             <Text
               style={[
                 styles.actionText,
-                {
-                  color: theme.colors.primary,
-                },
+                {color: theme.colors.primary},
               ]}>
               Restore
             </Text>
@@ -160,21 +276,27 @@ function TrashScreen({navigation}) {
 
           <Pressable
             onPress={() => setConfirmPermanentId(item.id)}
+            accessibilityRole="button"
+            accessibilityLabel={`Delete ${item.title} forever`}
             style={({pressed}) => [
-              styles.actionButton,
+              styles.actionBtn,
               {
-                backgroundColor: `${theme.colors.danger}10`,
+                backgroundColor: theme.colors.danger + '14',
+                borderColor: theme.colors.danger + '40',
                 opacity: pressed ? 0.75 : 1,
               },
             ]}>
+            <Trash2
+              size={13}
+              color={theme.colors.danger}
+              strokeWidth={2.6}
+            />
             <Text
               style={[
                 styles.actionText,
-                {
-                  color: theme.colors.danger,
-                },
+                {color: theme.colors.danger},
               ]}>
-              Delete Forever
+              Delete forever
             </Text>
           </Pressable>
         </View>
@@ -182,128 +304,361 @@ function TrashScreen({navigation}) {
     );
   };
 
+  /* --------------------------- RENDER --------------------------- */
+  const hasItems = trashedTasks.length > 0;
+
   return (
-    <SafeAreaView
-      style={[
-        styles.container,
-        {
-          backgroundColor: theme.colors.background,
-        },
-      ]}
-      edges={['top']}>
-      <View style={styles.header}>
-        <Pressable onPress={openDrawer} style={styles.menuBtn}>
-          <Text style={[styles.menuIcon, {color: theme.colors.text}]}>☰</Text>
-        </Pressable>
-
-        <View style={styles.headerText}>
-          <Text
-            style={[
-              styles.eyebrow,
-              {
-                color: theme.colors.danger,
-              },
-            ]}>
-            RECYCLE BIN
-          </Text>
-
-          <Text
-            style={[
-              styles.title,
-              {
-                color: theme.colors.text,
-              },
-            ]}>
-            Trash
-          </Text>
-        </View>
-
-        <View
-          style={[
-            styles.countBadge,
-            {
-              backgroundColor: `${theme.colors.danger}12`,
-            },
-          ]}>
-          <Text
-            style={[
-              styles.countText,
-              {
-                color: theme.colors.danger,
-              },
-            ]}>
-            {trashedTasks.length}
-          </Text>
-        </View>
-      </View>
-
-      <Text
-        style={[
-          styles.subtitle,
-          {
-            color: theme.colors.textSecondary,
-          },
-        ]}>
-        Deleted tasks are kept here until you restore or permanently remove
-        them.
-      </Text>
-
-      {trashedTasks.length > 0 ? (
-        <Pressable
-          onPress={() => setConfirmEmptyTrash(true)}
-          style={({pressed}) => [
-            styles.emptyTrashBtn,
-            {
-              backgroundColor: `${theme.colors.danger}12`,
-              opacity: pressed ? 0.75 : 1,
-            },
-          ]}>
-          <Text style={[styles.emptyTrashText, {color: theme.colors.danger}]}>
-            Empty Trash
-          </Text>
-        </Pressable>
-      ) : null}
-
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
       <FlatList
-        data={trashedTasks}
+        data={filteredTasks}
         keyExtractor={item => String(item.id)}
         renderItem={renderItem}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         contentContainerStyle={[
           styles.listContent,
-          trashedTasks.length === 0 && styles.emptyListContent,
+          filteredTasks.length === 0 && styles.emptyListContent,
         ]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={theme.colors.primary}
+            colors={[theme.colors.primary]}
+          />
+        }
+        ListHeaderComponent={
+          <View>
+            {/* HEADER */}
+            <View style={styles.header}>
+              <Pressable
+                onPress={openDrawer}
+                style={styles.menuBtn}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Open menu">
+                <Menu
+                  size={18}
+                  color={theme.colors.text}
+                  strokeWidth={2.6}
+                />
+              </Pressable>
+
+              <View style={styles.headerContent}>
+                <Text style={styles.title}>Trash</Text>
+                <Text style={styles.subtitle}>
+                  {hasItems
+                    ? `${trashedTasks.length} item${
+                        trashedTasks.length !== 1 ? 's' : ''
+                      } · restore or delete`
+                    : 'Deleted tasks appear here'}
+                </Text>
+              </View>
+
+              <Pressable
+                onPress={() => {
+                  LayoutAnimation.configureNext(
+                    LayoutAnimation.Presets.easeInEaseOut,
+                  );
+                  setSearchOpen(v => !v);
+                  if (searchOpen) setSearch('');
+                }}
+                style={styles.headerIconBtn}
+                hitSlop={6}
+                accessibilityRole="button"
+                accessibilityLabel="Toggle search">
+                <Search
+                  size={16}
+                  color={theme.colors.text}
+                  strokeWidth={2.6}
+                />
+              </Pressable>
+
+              <View
+                style={[
+                  styles.countBadge,
+                  {backgroundColor: theme.colors.danger + '18'},
+                ]}>
+                <Trash2
+                  size={13}
+                  color={theme.colors.danger}
+                  strokeWidth={2.6}
+                />
+                <Text
+                  style={[
+                    styles.countNumber,
+                    {color: theme.colors.danger},
+                  ]}>
+                  {trashedTasks.length}
+                </Text>
+              </View>
+            </View>
+
+            {/* SEARCH */}
+            {searchOpen && (
+              <View
+                style={[
+                  styles.searchBar,
+                  {
+                    backgroundColor: theme.colors.surface,
+                    borderColor: theme.colors.border,
+                  },
+                ]}>
+                <Search
+                  size={15}
+                  color={theme.colors.textSecondary}
+                  strokeWidth={2.4}
+                />
+                <TextInput
+                  style={[
+                    styles.searchInput,
+                    {color: theme.colors.text},
+                  ]}
+                  placeholder="Search trash..."
+                  placeholderTextColor={theme.colors.textLight}
+                  value={search}
+                  onChangeText={setSearch}
+                  autoFocus
+                  returnKeyType="search"
+                />
+                {search.length > 0 && (
+                  <Pressable
+                    onPress={() => setSearch('')}
+                    hitSlop={8}
+                    accessibilityLabel="Clear search">
+                    <X
+                      size={14}
+                      color={theme.colors.textSecondary}
+                      strokeWidth={2.6}
+                    />
+                  </Pressable>
+                )}
+              </View>
+            )}
+
+            {/* INFO BANNER */}
+            {hasItems && !search.trim() && (
+              <View
+                style={[
+                  styles.infoBanner,
+                  {
+                    backgroundColor: theme.colors.primary + '0D',
+                    borderColor: theme.colors.primary + '25',
+                  },
+                ]}>
+                <Info
+                  size={14}
+                  color={theme.colors.primary}
+                  strokeWidth={2.6}
+                />
+                <Text
+                  style={[
+                    styles.infoText,
+                    {color: theme.colors.text},
+                  ]}>
+                  Items stay here until you delete them permanently.
+                </Text>
+              </View>
+            )}
+
+            {/* EMPTY TRASH BAR */}
+            {hasItems && !search.trim() && (
+              <Pressable
+                onPress={() => setConfirmEmptyTrash(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Empty trash"
+                style={({pressed}) => [
+                  styles.emptyTrashBar,
+                  {
+                    backgroundColor: theme.colors.danger + '12',
+                    borderColor: theme.colors.danger + '40',
+                    opacity: pressed ? 0.85 : 1,
+                  },
+                ]}>
+                <View
+                  style={[
+                    styles.emptyTrashIcon,
+                    {backgroundColor: theme.colors.danger + '20'},
+                  ]}>
+                  <Flame
+                    size={16}
+                    color={theme.colors.danger}
+                    strokeWidth={2.6}
+                  />
+                </View>
+                <View style={{flex: 1, minWidth: 0}}>
+                  <Text
+                    style={[
+                      styles.emptyTrashTitle,
+                      {color: theme.colors.danger},
+                    ]}>
+                    Empty Trash
+                  </Text>
+                  <Text
+                    style={[
+                      styles.emptyTrashSub,
+                      {color: theme.colors.textSecondary},
+                    ]}
+                    numberOfLines={1}>
+                    Permanently delete all {trashedTasks.length} item
+                    {trashedTasks.length !== 1 ? 's' : ''}
+                  </Text>
+                </View>
+                <ChevronRight
+                  size={18}
+                  color={theme.colors.danger}
+                  strokeWidth={2.4}
+                />
+              </Pressable>
+            )}
+
+            {/* STATS ROW */}
+            {hasItems && !search.trim() && (
+              <View style={styles.statsRow}>
+                <View
+                  style={[
+                    styles.statMini,
+                    {
+                      backgroundColor: theme.colors.surface,
+                      borderColor: theme.colors.border,
+                    },
+                  ]}>
+                  <Layers
+                    size={12}
+                    color={theme.colors.danger}
+                    strokeWidth={2.6}
+                  />
+                  <Text
+                    style={[
+                      styles.statMiniValue,
+                      {color: theme.colors.text},
+                    ]}>
+                    {trashedTasks.length}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.statMiniLabel,
+                      {color: theme.colors.textSecondary},
+                    ]}
+                    numberOfLines={1}>
+                    Items
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    styles.statMini,
+                    {
+                      backgroundColor: theme.colors.surface,
+                      borderColor: theme.colors.border,
+                    },
+                  ]}>
+                  <Clock
+                    size={12}
+                    color="#F59E0B"
+                    strokeWidth={2.6}
+                  />
+                  <Text
+                    style={[
+                      styles.statMiniValue,
+                      {color: theme.colors.text},
+                    ]}>
+                    {oldestDays > 0 ? `${oldestDays}d` : 'New'}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.statMiniLabel,
+                      {color: theme.colors.textSecondary},
+                    ]}
+                    numberOfLines={1}>
+                    Oldest
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    styles.statMini,
+                    {
+                      backgroundColor: theme.colors.surface,
+                      borderColor: theme.colors.border,
+                    },
+                  ]}>
+                  <ShieldAlert
+                    size={12}
+                    color="#EF4444"
+                    strokeWidth={2.6}
+                  />
+                  <Text
+                    style={[
+                      styles.statMiniValue,
+                      {color: theme.colors.text},
+                    ]}>
+                    ∞
+                  </Text>
+                  <Text
+                    style={[
+                      styles.statMiniLabel,
+                      {color: theme.colors.textSecondary},
+                    ]}
+                    numberOfLines={1}>
+                    Kept
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* RESULT COUNT */}
+            {search.trim() && filteredTasks.length > 0 && (
+              <Text
+                style={[
+                  styles.resultCount,
+                  {color: theme.colors.textSecondary},
+                ]}>
+                {filteredTasks.length} result
+                {filteredTasks.length !== 1 ? 's' : ''}
+              </Text>
+            )}
+          </View>
+        }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <View
               style={[
                 styles.emptyIcon,
                 {
-                  backgroundColor: `${theme.colors.success}14`,
+                  backgroundColor: theme.colors.surface,
+                  borderColor: theme.colors.border,
                 },
               ]}>
-              <Text style={styles.emptyEmoji}>✓</Text>
+              {search.trim() ? (
+                <Search
+                  size={32}
+                  color={theme.colors.textLight}
+                  strokeWidth={1.8}
+                />
+              ) : (
+                <Inbox
+                  size={32}
+                  color={theme.colors.textLight}
+                  strokeWidth={1.8}
+                />
+              )}
             </View>
 
             <Text
-              style={[
-                styles.emptyTitle,
-                {
-                  color: theme.colors.text,
-                },
-              ]}>
-              Trash is empty
+              style={[styles.emptyTitle, {color: theme.colors.text}]}>
+              {search.trim() ? 'No matches' : 'Trash is empty'}
             </Text>
 
             <Text
               style={[
                 styles.emptyText,
-                {
-                  color: theme.colors.textSecondary,
-                },
+                {color: theme.colors.textSecondary},
               ]}>
-              Deleted tasks will appear here. You can restore them later or
-              permanently remove them.
+              {search.trim()
+                ? 'Try a different keyword.'
+                : 'Deleted tasks will appear here. You can restore them or delete them permanently.'}
             </Text>
           </View>
         }
@@ -323,7 +678,9 @@ function TrashScreen({navigation}) {
       <ConfirmModal
         visible={confirmEmptyTrash}
         title="Empty Trash?"
-        message={`Permanently delete all ${trashedTasks.length} task(s)? This cannot be undone.`}
+        message={`Permanently delete all ${trashedTasks.length} item${
+          trashedTasks.length !== 1 ? 's' : ''
+        }? This cannot be undone.`}
         confirmText="Empty Trash"
         cancelText="Cancel"
         onConfirm={handleEmptyTrash}
@@ -334,215 +691,295 @@ function TrashScreen({navigation}) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
+/* --------------------------- STYLES --------------------------- */
 
-  header: {
-    paddingTop: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+function createStyles(theme, insets) {
+  return StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: theme.colors.background,
+    },
 
-  menuBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-  },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingTop: 12,
+      marginBottom: 14,
+    },
+    menuBtn: {
+      width: 42,
+      height: 42,
+      borderRadius: 13,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.surface,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    headerContent: {
+      flex: 1,
+      minWidth: 0,
+    },
+    title: {
+      fontSize: 24,
+      fontWeight: '900',
+      color: theme.colors.text,
+      letterSpacing: -0.6,
+    },
+    subtitle: {
+      marginTop: 2,
+      fontSize: 12,
+      fontWeight: '500',
+      color: theme.colors.textSecondary,
+      letterSpacing: 0.1,
+    },
+    headerIconBtn: {
+      width: 38,
+      height: 38,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.surface,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    countBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      borderRadius: 12,
+      minWidth: 44,
+      justifyContent: 'center',
+    },
+    countNumber: {
+      fontSize: 14,
+      fontWeight: '900',
+      letterSpacing: -0.3,
+    },
 
-  menuIcon: {
-    fontSize: 22,
-    fontWeight: '700',
-  },
+    searchBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderRadius: 14,
+      borderWidth: 1,
+      marginBottom: 12,
+    },
+    searchInput: {
+      flex: 1,
+      fontSize: 14,
+      fontWeight: '600',
+      padding: 0,
+      letterSpacing: -0.1,
+    },
 
-  headerText: {
-    flex: 1,
-  },
+    infoBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderRadius: 12,
+      borderWidth: 1,
+      marginBottom: 10,
+    },
+    infoText: {
+      flex: 1,
+      fontSize: 11.5,
+      fontWeight: '600',
+      letterSpacing: 0.1,
+      lineHeight: 16,
+    },
 
-  eyebrow: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.4,
-    marginBottom: 5,
-  },
+    emptyTrashBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingVertical: 12,
+      paddingHorizontal: 12,
+      borderRadius: 15,
+      borderWidth: 1,
+      marginBottom: 12,
+    },
+    emptyTrashIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    emptyTrashTitle: {
+      fontSize: 14,
+      fontWeight: '900',
+      letterSpacing: -0.2,
+    },
+    emptyTrashSub: {
+      fontSize: 11,
+      fontWeight: '600',
+      marginTop: 2,
+      letterSpacing: 0.1,
+    },
 
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.8,
-  },
+    statsRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: 14,
+    },
+    statMini: {
+      flex: 1,
+      minWidth: 0,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 5,
+      paddingVertical: 10,
+      paddingHorizontal: 8,
+      borderRadius: 13,
+      borderWidth: 1,
+    },
+    statMiniValue: {
+      fontSize: 14,
+      fontWeight: '900',
+      letterSpacing: -0.3,
+    },
+    statMiniLabel: {
+      fontSize: 10,
+      fontWeight: '700',
+      letterSpacing: 0.2,
+    },
 
-  countBadge: {
-    minWidth: 42,
-    height: 42,
-    paddingHorizontal: 12,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+    resultCount: {
+      fontSize: 11,
+      fontWeight: '700',
+      letterSpacing: 0.4,
+      textTransform: 'uppercase',
+      marginBottom: 8,
+    },
 
-  countText: {
-    fontSize: 16,
-    fontWeight: '800',
-  },
+    listContent: {
+      paddingHorizontal: 20,
+      paddingBottom: Math.max(insets.bottom, 12) + 40,
+    },
+    emptyListContent: {
+      flexGrow: 1,
+    },
 
-  subtitle: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 8,
-    marginBottom: 12,
-  },
+    card: {
+      borderWidth: 1,
+      borderRadius: 18,
+      padding: 14,
+      marginBottom: 10,
+    },
+    cardTopRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 12,
+    },
+    trashIcon: {
+      width: 42,
+      height: 42,
+      borderRadius: 13,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    content: {
+      flex: 1,
+      minWidth: 0,
+    },
+    cardTitle: {
+      fontSize: 14.5,
+      fontWeight: '800',
+      letterSpacing: -0.2,
+      lineHeight: 20,
+    },
+    description: {
+      fontSize: 12,
+      fontWeight: '500',
+      marginTop: 3,
+      letterSpacing: 0.1,
+    },
+    metaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      marginTop: 6,
+      flexWrap: 'wrap',
+    },
+    categoryDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+    },
+    metaText: {
+      fontSize: 11,
+      fontWeight: '700',
+      letterSpacing: 0.1,
+      maxWidth: 100,
+    },
+    metaDot: {
+      fontSize: 11,
+    },
 
-  emptyTrashBtn: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    marginBottom: 12,
-  },
+    actions: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 12,
+    },
+    actionBtn: {
+      flex: 1,
+      minWidth: 0,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      minHeight: 40,
+      borderRadius: 12,
+      borderWidth: 1,
+    },
+    actionText: {
+      fontSize: 12.5,
+      fontWeight: '800',
+      letterSpacing: 0.1,
+    },
 
-  emptyTrashText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-
-  listContent: {
-    paddingTop: 4,
-    paddingBottom: 30,
-  },
-
-  emptyListContent: {
-    flexGrow: 1,
-  },
-
-  card: {
-    borderWidth: 1,
-    borderRadius: 22,
-    padding: 16,
-    marginBottom: 12,
-  },
-
-  topRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-
-  trashIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  trashIconText: {
-    fontSize: 20,
-  },
-
-  content: {
-    flex: 1,
-    marginLeft: 12,
-    paddingRight: 8,
-  },
-
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    lineHeight: 22,
-  },
-
-  description: {
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 4,
-  },
-
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 15,
-  },
-
-  categoryBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
-  },
-
-  categoryText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
-  deletedText: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginLeft: 'auto',
-  },
-
-  actions: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 15,
-  },
-
-  actionButton: {
-    flex: 1,
-    minHeight: 42,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  restoreButton: {
-    borderWidth: 1,
-  },
-
-  actionText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-
-  emptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 25,
-    paddingBottom: 80,
-  },
-
-  emptyIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 18,
-  },
-
-  emptyEmoji: {
-    fontSize: 30,
-    color: '#22C55E',
-    fontWeight: '800',
-  },
-
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    marginBottom: 8,
-  },
-
-  emptyText: {
-    fontSize: 14,
-    lineHeight: 21,
-    textAlign: 'center',
-    maxWidth: 310,
-  },
-});
+    emptyContainer: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 25,
+      paddingBottom: 80,
+    },
+    emptyIcon: {
+      width: 84,
+      height: 84,
+      borderRadius: 26,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 18,
+      borderWidth: 1,
+    },
+    emptyTitle: {
+      fontSize: 17,
+      fontWeight: '800',
+      letterSpacing: -0.3,
+      marginBottom: 6,
+      textAlign: 'center',
+    },
+    emptyText: {
+      fontSize: 13,
+      lineHeight: 19,
+      textAlign: 'center',
+      maxWidth: 290,
+      fontWeight: '500',
+    },
+  });
+}
 
 export default TrashScreen;
