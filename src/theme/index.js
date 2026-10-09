@@ -1,0 +1,59 @@
+import colors from '../constants/colors';
+
+const spacing = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 20,
+  xxl: 24,
+  xxxl: 32,
+};
+
+const typography = {
+  title: 32,
+  heading: 24,
+  subheading: 20,
+  body: 16,
+  bodySmall: 14,
+  caption: 12,
+};
+
+const radius = {
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 20,
+  xxl: 28,
+  round: 999,
+};
+
+const shadows = {
+  card: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  elevated: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 10,
+  },
+};
+
+function createTheme(mode = 'light') {
+  return {
+    mode,
+    colors: colors[mode],
+    spacing,
+    typography,
+    radius,
+    shadows,
+  };
+}
+
+export default createTheme;
